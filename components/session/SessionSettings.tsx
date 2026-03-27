@@ -60,7 +60,20 @@ export function SessionSettings({ config, onChange }: Props) {
               />
               Sequential
             </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                checked={config.turn_order === 'hybrid'}
+                onChange={() => update({ turn_order: 'hybrid' })}
+              />
+              Hybrid
+            </label>
           </div>
+          <p className="text-xs text-gray-400 mt-1">
+            {config.turn_order === 'hybrid' && 'Round 1 simultaneous, then sequential turns'}
+            {config.turn_order === 'simultaneous' && 'All models respond at once each round'}
+            {config.turn_order === 'sequential' && 'Models take turns, each sees previous speakers'}
+          </p>
         </div>
 
         {/* Suggested Rounds */}

@@ -40,7 +40,7 @@ export type ApprovalThreshold =
 
 export type AnalysisMode = 'blind' | 'open';
 
-export type TurnOrder = 'simultaneous' | 'sequential';
+export type TurnOrder = 'simultaneous' | 'sequential' | 'hybrid';
 
 export type UserRole = 'observer' | 'participant';
 

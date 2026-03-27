@@ -79,7 +79,11 @@ export async function runDiscussionPhase(
     const roundContributions: { name: string; content: string }[] = [];
     let consensusCount = 0;
 
-    if (config.turn_order === 'sequential') {
+    // Hybrid mode: round 1 simultaneous, round 2+ sequential
+    const useSequential = config.turn_order === 'sequential'
+      || (config.turn_order === 'hybrid' && roundNum > 1);
+
+    if (useSequential) {
       // ---- SEQUENTIAL MODE ----
       // Each panelist responds one at a time, seeing all previous speakers in this round
       let currentRoundTranscript = '';
