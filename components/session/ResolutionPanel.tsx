@@ -97,9 +97,9 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
         </a>
       </div>
 
-      {/* Resolution document */}
-      <div className="rounded-lg border border-gray-200 bg-white p-8 md:p-12">
-        <div className="prose prose-gray max-w-none prose-headings:text-gray-900 prose-headings:font-bold prose-h1:text-2xl prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h3:text-lg prose-p:text-[15px] prose-p:leading-7 prose-p:text-gray-700 prose-li:text-[15px] prose-li:text-gray-700 prose-li:leading-7 prose-strong:text-gray-900 prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-indigo-400 prose-blockquote:bg-indigo-50/30 prose-blockquote:text-gray-600 prose-blockquote:py-1 prose-a:text-indigo-600 prose-hr:border-gray-200 prose-hr:my-8 prose-table:text-sm prose-th:text-left prose-th:text-gray-700 prose-th:bg-gray-50 prose-td:text-gray-600">
+      {/* Resolution document — optimal reading width ~70ch */}
+      <div className="rounded-xl border border-gray-200 bg-white p-8 md:py-16 md:px-12">
+        <div className="mx-auto prose prose-gray prose-headings:text-gray-900 prose-headings:font-bold prose-h1:text-2xl prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h3:text-lg prose-p:text-[15px] prose-p:leading-7 prose-p:text-gray-700 prose-li:text-[15px] prose-li:text-gray-700 prose-li:leading-7 prose-strong:text-gray-900 prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-indigo-400 prose-blockquote:bg-indigo-50/30 prose-blockquote:text-gray-600 prose-blockquote:py-1 prose-a:text-indigo-600 prose-hr:border-gray-200 prose-hr:my-8 prose-table:text-sm prose-th:text-left prose-th:text-gray-700 prose-th:bg-gray-50 prose-td:text-gray-600" style={{ maxWidth: '70ch' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {resolution.content_markdown}
           </ReactMarkdown>
