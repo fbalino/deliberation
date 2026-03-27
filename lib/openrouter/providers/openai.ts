@@ -29,7 +29,8 @@ function buildBody(params: CallModelParams, stream: boolean) {
   if (stream) {
     body.stream_options = { include_usage: true };
   }
-  if (params.maxTokens) body.max_tokens = params.maxTokens;
+  // GPT-5 series uses max_completion_tokens, not max_tokens
+  if (params.maxTokens) body.max_completion_tokens = params.maxTokens;
   if (params.temperature !== undefined) body.temperature = params.temperature;
   // Always enable reasoning/thinking
   body.reasoning = { effort: 'high' };

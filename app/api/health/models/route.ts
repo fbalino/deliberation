@@ -32,7 +32,7 @@ async function checkOpenAI(): Promise<{ ok: boolean; error?: string; latencyMs: 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model: 'gpt-5.4', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+      body: JSON.stringify({ model: 'gpt-5.4', max_completion_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
     });
     const latencyMs = Date.now() - start;
     if (res.ok) return { ok: true, latencyMs };
