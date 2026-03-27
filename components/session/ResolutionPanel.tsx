@@ -29,35 +29,31 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
   const rawAnalyses = getRawAnalyses(rounds);
   const votes = getVotes(rounds, panelistMap);
 
-  // Fetch LLM-generated summaries on mount
+  // Fetch or load cached summaries
   useEffect(() => {
     async function fetchSummaries() {
       setLoadingSummaries(true);
-      const results = new Map<string, string>();
 
-      await Promise.all(
-        Array.from(rawAnalyses.entries()).map(async ([panelistId, text]) => {
-          try {
-            const res = await fetch('/api/summarize', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text }),
-            });
-            if (res.ok) {
-              const { summary } = await res.json();
-              results.set(panelistId, summary);
-            }
-          } catch { /* use fallback */ }
-        })
-      );
+      try {
+        const panelistTexts = Array.from(rawAnalyses.entries()).map(([id, text]) => ({ id, text }));
+        const res = await fetch('/api/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, panelists: panelistTexts }),
+        });
 
-      setSummaries(results);
+        if (res.ok) {
+          const { summaries: data } = await res.json();
+          setSummaries(new Map(Object.entries(data || {})));
+        }
+      } catch { /* fallback to empty */ }
+
       setLoadingSummaries(false);
     }
 
     if (rawAnalyses.size > 0) fetchSummaries();
     else setLoadingSummaries(false);
-  }, [rounds.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [rounds.length, sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function downloadMarkdown() {
     if (!resolution) return;
@@ -117,21 +113,42 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
         })}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={downloadMarkdown}
-          className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-        >
-          Download .md
-        </button>
-        <a
-          href={`/new?chain_from=${sessionId}`}
-          className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          Chain → New Session
-        </a>
-      </div>
+      {/* Author + actions */}
+      {(() => {
+        const drafter = resolution.drafter_panelist_id ? panelistMap.get(resolution.drafter_panelist_id) : null;
+        return (
+          <div className="flex items-center justify-between mb-6">
+            {drafter ? (
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                  style={{ backgroundColor: drafter.avatar_color || '#6366f1' }}
+                >
+                  {drafter.display_name.charAt(0)}
+                </div>
+                <div>
+                  <div className="text-sm text-gray-500">Authored by</div>
+                  <div className="text-sm font-semibold text-gray-900">{drafter.display_name}</div>
+                </div>
+              </div>
+            ) : <div />}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={downloadMarkdown}
+                className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Download .md
+              </button>
+              <a
+                href={`/new?chain_from=${sessionId}`}
+                className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Chain → New Session
+              </a>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Resolution document — optimal reading width ~70ch */}
       <div className="rounded-xl border border-gray-200 bg-white p-8 md:py-16 md:px-12">

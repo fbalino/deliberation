@@ -44,6 +44,7 @@ interface Props {
   panelistIds: string[];
   panelistMap: Map<string, { display_name: string; avatar_color: string | null; model_id: string }>;
   filterPhases?: string[];
+  electedDrafter?: { id: string; name: string; color: string } | null;
 }
 
 const PHASE_SHORT: Record<string, string> = {
@@ -138,7 +139,7 @@ function ContentRenderer({ content, isStreaming }: { content: string; isStreamin
   );
 }
 
-export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhases }: Props) {
+export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhases, electedDrafter }: Props) {
   const columnsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -194,9 +195,27 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
   }
 
   const hasContent = columns.some((c) => c.entries.length > 0);
+  const showDrafterBanner = electedDrafter && filterPhases && (filterPhases.includes('drafting') || filterPhases.includes('drafter_election') || filterPhases.includes('voting'));
 
   return (
-    <div ref={columnsRef} className="flex-1 grid gap-3 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+    <div className="flex-1 flex flex-col min-h-0">
+      {/* Drafter banner */}
+      {showDrafterBanner && (
+        <div className="flex items-center gap-3 mb-3 px-4 py-3 bg-purple-50 border border-purple-200 rounded-lg shrink-0">
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+            style={{ backgroundColor: electedDrafter.color }}
+          >
+            {electedDrafter.name.charAt(0)}
+          </div>
+          <div>
+            <span className="text-sm font-semibold text-purple-900">{electedDrafter.name}</span>
+            <span className="text-sm text-purple-600 ml-1.5">was elected to draft the resolution</span>
+          </div>
+        </div>
+      )}
+
+      <div ref={columnsRef} className="flex-1 grid gap-3 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
       {columns.map((col) => (
         <div
           key={col.panelistId}
@@ -258,6 +277,7 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
           </div>
         </div>
       ))}
+    </div>
     </div>
   );
 }

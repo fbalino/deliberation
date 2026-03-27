@@ -361,6 +361,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           panelistIds={panelistIds}
           panelistMap={panelistMap}
           filterPhases={activeTab ? [...(PHASES.find(p => p.key === activeTab)?.filterPhases ?? [])] : undefined}
+          electedDrafter={state.electedDrafter ? (() => {
+            const p = panelists.find((p) => p.id === state.electedDrafter);
+            return p ? { id: p.id, name: p.display_name, color: p.avatar_color || '#6366f1' } : null;
+          })() : null}
         />
       )}
 
