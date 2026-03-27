@@ -57,14 +57,13 @@ const PHASE_SHORT: Record<string, string> = {
 export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhases }: Props) {
   const columnsRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll each column to bottom
+  // Auto-scroll each column body to bottom as new content streams in
   useEffect(() => {
     if (!columnsRef.current) return;
-    const cols = columnsRef.current.querySelectorAll('[data-column]');
-    cols.forEach((col) => {
-      const el = col as HTMLElement;
-      const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-      if (isAtBottom || el.dataset.userScrolled !== 'true') {
+    const bodies = columnsRef.current.querySelectorAll('[data-column-body]');
+    bodies.forEach((body) => {
+      const el = body as HTMLElement;
+      if (el.dataset.userScrolled !== 'true') {
         el.scrollTop = el.scrollHeight;
       }
     });
@@ -112,12 +111,6 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
       {columns.map((col) => (
         <div
           key={col.panelistId}
-          data-column
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
-            el.dataset.userScrolled = atBottom ? 'false' : 'true';
-          }}
           className="flex flex-col border border-gray-200 rounded-lg overflow-hidden min-h-0"
         >
           {/* Column header */}
@@ -137,8 +130,16 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
             )}
           </div>
 
-          {/* Column body — scrollable */}
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+          {/* Column body — scrollable, content flows top to bottom */}
+          <div
+            data-column-body
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+              el.dataset.userScrolled = atBottom ? 'false' : 'true';
+            }}
+            className="flex-1 overflow-y-auto px-3 py-2 space-y-3"
+          >
             {col.entries.map((entry, i) => (
               <div key={`${entry.phase}-${entry.roundNumber}`}>
                 {/* Phase/round label */}
