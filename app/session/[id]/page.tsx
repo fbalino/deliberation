@@ -264,6 +264,18 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const totalRounds = state.rounds.filter((r) => r.phase === 'discussion').length;
   const streamingCount = state.activeContributions.size;
 
+  // Deduplicate votes — only keep the latest vote per panelist
+  const deduplicatedVotes = (() => {
+    const latest = new Map<string, typeof state.votes[number]>();
+    for (const v of state.votes) {
+      latest.set(v.panelistId, v);
+    }
+    return Array.from(latest.values()).map((v) => {
+      const p = panelists.find((p) => p.id === v.panelistId);
+      return { ...v, panelistName: p?.display_name || v.panelistName || 'Unknown', panelistColor: p?.avatar_color || v.panelistColor };
+    });
+  })();
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Top bar — session info counter */}
@@ -338,13 +350,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       {/* Phase transition spinner — shows when streaming count is 0 but session is active */}
       <PhaseTransition phase={state.phase} isTransitioning={isActive && streamingCount === 0 && state.rounds.length > 0} />
 
-      {/* Vote Summary — show when viewing voting tab or when votes exist and no tab filter */}
-      {state.votes.length > 0 && (!activeTab || activeTab === 'voting') && (
+      {/* Vote Summary — only show inline when no tab is selected and session is done */}
+      {state.votes.length > 0 && !activeTab && state.phase === 'completed' && (
         <div className="mb-3">
-          <VoteSummary votes={state.votes.map((v) => {
-            const p = panelists.find((p) => p.id === v.panelistId);
-            return { ...v, panelistName: p?.display_name || v.panelistName || 'Unknown', panelistColor: p?.avatar_color || v.panelistColor };
-          })} />
+          <VoteSummary votes={deduplicatedVotes} />
         </div>
       )}
 
@@ -356,13 +365,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           rounds={state.rounds}
           sessionId={sessionId}
         />
-      ) : activeTab === 'voting' && state.votes.length > 0 ? (
-        <div className="flex-1 overflow-y-auto">
+      ) : activeTab === 'voting' && deduplicatedVotes.length > 0 ? (
+        <div className="flex-1 overflow-y-auto py-4">
           <div className="max-w-2xl mx-auto">
-            <VoteSummary votes={state.votes.map((v) => {
-              const p = panelists.find((p) => p.id === v.panelistId);
-              return { ...v, panelistName: p?.display_name || v.panelistName || 'Unknown', panelistColor: p?.avatar_color || v.panelistColor };
-            })} />
+            <VoteSummary votes={deduplicatedVotes} />
           </div>
         </div>
       ) : (
