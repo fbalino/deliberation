@@ -7,7 +7,8 @@ import { ContributionFeed, type RoundGroup, type ContributionItem } from '@/comp
 import { InterventionBar } from '@/components/session/InterventionBar';
 import { VoteSummary } from '@/components/session/VoteSummary';
 import { PhaseTransition } from '@/components/session/PhaseTransition';
-import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist } from '@/lib/supabase/types';
+import { ResolutionPanel } from '@/components/session/ResolutionPanel';
+import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist, DbResolution } from '@/lib/supabase/types';
 
 interface SessionState {
   phase: SessionStatus;
@@ -20,6 +21,7 @@ interface SessionState {
   isPaused: boolean;
   messages: string[];
   resolutionId: string | null;
+  resolution: DbResolution | null;
 }
 
 type Action = SSEEvent | { type: 'init'; session: SessionDetail };
@@ -64,7 +66,8 @@ function reducer(state: SessionState, action: Action): SessionState {
 
     const maxRound = Math.max(0, ...rounds.filter(r => r.phase === 'discussion').map(r => r.roundNumber));
 
-    return { ...state, phase: session.status, rounds, votes, totalCostCents: session.total_cost_cents, resolutionId: session.resolutions?.[0]?.id || null, currentRound: maxRound };
+    const approvedRes = session.resolutions?.find((r) => r.status === 'approved') || session.resolutions?.[0] || null;
+    return { ...state, phase: session.status, rounds, votes, totalCostCents: session.total_cost_cents, resolutionId: approvedRes?.id || null, resolution: approvedRes as DbResolution | null, currentRound: maxRound };
   }
 
   switch (action.type) {
@@ -168,6 +171,7 @@ const INITIAL_STATE: SessionState = {
   isPaused: false,
   messages: [],
   resolutionId: null,
+  resolution: null,
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -228,6 +232,28 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     }, 1000);
     return () => clearInterval(interval);
   }, [state.phase, startTime]);
+
+  // Auto-switch to Resolution tab when session completes
+  useEffect(() => {
+    if (state.phase === 'completed' && state.resolution) {
+      setActiveTab('completed');
+    }
+  }, [state.phase, state.resolution]);
+
+  // Fetch resolution when session_complete event arrives (if not already loaded)
+  useEffect(() => {
+    if (state.resolutionId && !state.resolution) {
+      fetch(`/api/sessions/${sessionId}`).then(async (res) => {
+        if (res.ok) {
+          const data: SessionDetail = await res.json();
+          const approvedRes = data.resolutions?.find((r) => r.status === 'approved') || data.resolutions?.[0];
+          if (approvedRes) {
+            dispatch({ type: 'init', session: data });
+          }
+        }
+      });
+    }
+  }, [state.resolutionId, state.resolution, sessionId]);
 
   if (loading) return <div className="text-center py-12 text-gray-400">Loading session...</div>;
 
@@ -321,22 +347,22 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Resolution link — show when viewing resolution tab or completed */}
-      {state.resolutionId && (state.phase === 'completed' || activeTab === 'completed') && (
-        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-          <a href={`/session/${sessionId}/resolution`} className="text-green-700 font-medium hover:underline text-sm">
-            View Final Resolution →
-          </a>
-        </div>
+      {/* Main content: Resolution panel OR Column feed */}
+      {activeTab === 'completed' ? (
+        <ResolutionPanel
+          resolution={state.resolution}
+          panelists={panelists}
+          rounds={state.rounds}
+          sessionId={sessionId}
+        />
+      ) : (
+        <ContributionFeed
+          rounds={state.rounds}
+          panelistIds={panelistIds}
+          panelistMap={panelistMap}
+          filterPhases={activeTab ? [...(PHASES.find(p => p.key === activeTab)?.filterPhases ?? [])] : undefined}
+        />
       )}
-
-      {/* Column-based contribution feed with optional phase filter */}
-      <ContributionFeed
-        rounds={state.rounds}
-        panelistIds={panelistIds}
-        panelistMap={panelistMap}
-        filterPhases={activeTab ? [...(PHASES.find(p => p.key === activeTab)?.filterPhases ?? [])] : undefined}
-      />
 
       {/* Intervention Bar */}
       <InterventionBar sessionId={sessionId} isPaused={state.isPaused} isActive={isActive} />
