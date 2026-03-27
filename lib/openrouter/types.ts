@@ -1,26 +1,10 @@
 import type { TokenUsage } from '@/lib/supabase/types';
 
-export interface OpenRouterMessage {
+export type Provider = 'anthropic' | 'openai' | 'google';
+
+export interface Message {
   role: 'system' | 'user' | 'assistant';
-  content: string | OpenRouterContentPart[];
-}
-
-export interface OpenRouterContentPart {
-  type: 'text' | 'image_url';
-  text?: string;
-  image_url?: { url: string };
-}
-
-export interface OpenRouterRequest {
-  model: string;
-  messages: OpenRouterMessage[];
-  stream: boolean;
-  max_tokens?: number;
-  temperature?: number;
-  reasoning?: {
-    effort?: string;
-    max_tokens?: number;
-  };
+  content: string;
 }
 
 // What callModel yields during streaming
@@ -40,7 +24,7 @@ export interface ModelResponse {
 export interface ModelDefinition {
   id: string;
   name: string;
-  provider: string;
+  provider: Provider;
   inputPricePerMTok: number;
   outputPricePerMTok: number;
   contextWindow: number;
@@ -50,10 +34,22 @@ export interface ModelDefinition {
 
 export interface CallModelParams {
   modelId: string;
-  messages: OpenRouterMessage[];
+  messages: Message[];
   systemPrompt?: string;
   stream?: boolean;
   maxTokens?: number;
   temperature?: number;
   reasoning?: { effort?: string; maxTokens?: number };
 }
+
+// Keep old name as alias for compatibility
+export type OpenRouterMessage = Message;
+export type OpenRouterContentPart = { type: 'text' | 'image_url'; text?: string; image_url?: { url: string } };
+export type OpenRouterRequest = {
+  model: string;
+  messages: Message[];
+  stream: boolean;
+  max_tokens?: number;
+  temperature?: number;
+  reasoning?: { effort?: string; max_tokens?: number };
+};
