@@ -29,10 +29,9 @@ function buildBody(params: CallModelParams) {
   const config: Record<string, unknown> = {};
   if (params.maxTokens) config.maxOutputTokens = params.maxTokens;
   if (params.temperature !== undefined) config.temperature = params.temperature;
-  if (params.reasoning) {
-    config.thinkingConfig = { thinkingBudget: params.reasoning.maxTokens || 10000 };
-  }
-  if (Object.keys(config).length > 0) body.generationConfig = config;
+  // Always enable thinking at HIGH level
+  config.thinkingConfig = { thinking_level: 'HIGH' };
+  body.generationConfig = config;
 
   return body;
 }

@@ -30,13 +30,8 @@ function buildBody(params: CallModelParams, stream: boolean) {
   if (params.temperature !== undefined) {
     body.temperature = params.temperature;
   }
-  // Extended thinking
-  if (params.reasoning) {
-    body.thinking = {
-      type: 'enabled',
-      budget_tokens: params.reasoning.maxTokens || 10000,
-    };
-  }
+  // Always enable adaptive thinking for Opus 4.6
+  body.thinking = { type: 'adaptive' };
 
   return body;
 }
