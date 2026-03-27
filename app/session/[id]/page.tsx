@@ -348,7 +348,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Main content: Resolution panel OR Column feed */}
+      {/* Main content */}
       {activeTab === 'completed' ? (
         <ResolutionPanel
           resolution={state.resolution}
@@ -356,6 +356,15 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           rounds={state.rounds}
           sessionId={sessionId}
         />
+      ) : activeTab === 'voting' && state.votes.length > 0 ? (
+        <div className="flex-1 overflow-y-auto">
+          <div className="max-w-2xl mx-auto">
+            <VoteSummary votes={state.votes.map((v) => {
+              const p = panelists.find((p) => p.id === v.panelistId);
+              return { ...v, panelistName: p?.display_name || v.panelistName || 'Unknown', panelistColor: p?.avatar_color || v.panelistColor };
+            })} />
+          </div>
+        </div>
       ) : (
         <ContributionFeed
           rounds={state.rounds}
