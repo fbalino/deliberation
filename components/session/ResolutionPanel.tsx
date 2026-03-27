@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { DbResolution, DbPanelist, VoteData, VoteVerdict } from '@/lib/supabase/types';
@@ -21,11 +22,42 @@ const VERDICT_STYLE: Record<string, string> = {
 export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Props) {
   const panelistMap = new Map(panelists.map((p) => [p.id, p]));
 
-  // Get each panelist's final analysis summary (first sentence of their analysis)
-  const analysisSummaries = getAnalysisSummaries(rounds, panelistMap);
+  const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
+  const [loadingSummaries, setLoadingSummaries] = useState(true);
 
-  // Get vote results
+  // Get raw analysis texts and vote results
+  const rawAnalyses = getRawAnalyses(rounds);
   const votes = getVotes(rounds, panelistMap);
+
+  // Fetch LLM-generated summaries on mount
+  useEffect(() => {
+    async function fetchSummaries() {
+      setLoadingSummaries(true);
+      const results = new Map<string, string>();
+
+      await Promise.all(
+        Array.from(rawAnalyses.entries()).map(async ([panelistId, text]) => {
+          try {
+            const res = await fetch('/api/summarize', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text }),
+            });
+            if (res.ok) {
+              const { summary } = await res.json();
+              results.set(panelistId, summary);
+            }
+          } catch { /* use fallback */ }
+        })
+      );
+
+      setSummaries(results);
+      setLoadingSummaries(false);
+    }
+
+    if (rawAnalyses.size > 0) fetchSummaries();
+    else setLoadingSummaries(false);
+  }, [rounds.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function downloadMarkdown() {
     if (!resolution) return;
@@ -51,7 +83,7 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
       {/* Panelist summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
         {panelists.filter((p) => !p.is_human).map((p) => {
-          const summary = analysisSummaries.get(p.id);
+          const summary = summaries.get(p.id);
           const vote = votes.get(p.id);
 
           return (
@@ -73,8 +105,12 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-600 leading-relaxed line-clamp-4">
-                {summary || 'No analysis recorded'}
+              <p className="text-sm text-gray-600 leading-relaxed">
+                {loadingSummaries ? (
+                  <span className="text-gray-400 italic">Summarizing...</span>
+                ) : (
+                  summary || 'No analysis recorded'
+                )}
               </p>
             </div>
           );
@@ -109,21 +145,19 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
   );
 }
 
-function getAnalysisSummaries(rounds: RoundGroup[], panelistMap: Map<string, DbPanelist>): Map<string, string> {
-  const summaries = new Map<string, string>();
+function getRawAnalyses(rounds: RoundGroup[]): Map<string, string> {
+  const analyses = new Map<string, string>();
   const analysisRounds = rounds.filter((r) => r.phase === 'analysis');
 
   for (const round of analysisRounds) {
     for (const contrib of round.contributions) {
       if (contrib.content) {
-        // Get first 1-2 sentences
-        const sentences = contrib.content.split(/(?<=[.!?])\s+/).slice(0, 2).join(' ');
-        summaries.set(contrib.panelistId, sentences.slice(0, 200));
+        analyses.set(contrib.panelistId, contrib.content);
       }
     }
   }
 
-  return summaries;
+  return analyses;
 }
 
 function getVotes(rounds: RoundGroup[], panelistMap: Map<string, DbPanelist>): Map<string, VoteData> {
