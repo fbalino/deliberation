@@ -54,10 +54,93 @@ const PHASE_SHORT: Record<string, string> = {
   voting: 'Vote',
 };
 
+/** Detect if content is JSON (like vote or election responses) and render it nicely */
+function JsonCard({ content }: { content: string }) {
+  const trimmed = content.trim();
+
+  // Try to extract JSON from the content
+  let json: Record<string, unknown> | null = null;
+  const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      json = JSON.parse(jsonMatch[0]);
+    } catch { /* not valid json */ }
+  }
+
+  if (!json) return null;
+
+  const entries = Object.entries(json).filter(([, v]) => v !== null && v !== undefined);
+
+  // Label styling based on known fields
+  const labelStyle: Record<string, string> = {
+    verdict: 'text-indigo-700 bg-indigo-50',
+    pick: 'text-indigo-700 bg-indigo-50',
+    reason: 'text-gray-600 bg-gray-50',
+    reasoning: 'text-gray-600 bg-gray-50',
+    amendments: 'text-amber-700 bg-amber-50',
+  };
+
+  const verdictBadge: Record<string, string> = {
+    approve: 'bg-green-100 text-green-800 border-green-200',
+    approve_with_amendments: 'bg-amber-100 text-amber-800 border-amber-200',
+    reject: 'bg-red-100 text-red-800 border-red-200',
+  };
+
+  return (
+    <div className="rounded-lg border border-gray-200 overflow-hidden text-sm">
+      {entries.map(([key, value]) => {
+        const strValue = String(value);
+        const isVerdict = key === 'verdict' && verdictBadge[strValue];
+
+        return (
+          <div key={key} className="flex border-b border-gray-100 last:border-b-0">
+            <div className={`px-3 py-2 font-medium text-xs uppercase tracking-wide w-24 shrink-0 ${labelStyle[key] || 'text-gray-500 bg-gray-50'}`}>
+              {key}
+            </div>
+            <div className="px-3 py-2 flex-1 text-gray-700 text-[13px] leading-relaxed">
+              {isVerdict ? (
+                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${verdictBadge[strValue]}`}>
+                  {strValue.replace(/_/g, ' ')}
+                </span>
+              ) : (
+                strValue
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Render content — detect JSON and render specially, otherwise markdown */
+function ContentRenderer({ content, isStreaming }: { content: string; isStreaming: boolean }) {
+  const trimmed = content.trim();
+  const isJson = /^\s*\{/.test(trimmed) && /\}\s*$/.test(trimmed);
+
+  if (isJson) {
+    const jsonCard = <JsonCard content={content} />;
+    if (jsonCard) {
+      return (
+        <div>
+          {jsonCard}
+          {isStreaming && <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm mt-1" />}
+        </div>
+      );
+    }
+  }
+
+  return (
+    <div className="prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-p:text-gray-700 prose-li:text-[13px] prose-li:text-gray-700 prose-strong:text-gray-800 prose-code:text-xs prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:text-xs prose-blockquote:border-indigo-300 prose-blockquote:text-gray-600 prose-a:text-indigo-600 prose-hr:border-gray-200">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || ''}</ReactMarkdown>
+      {isStreaming && <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm" />}
+    </div>
+  );
+}
+
 export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhases }: Props) {
   const columnsRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll each column body to bottom as new content streams in
   useEffect(() => {
     if (!columnsRef.current) return;
     const bodies = columnsRef.current.querySelectorAll('[data-column-body]');
@@ -69,7 +152,7 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
     });
   }, [rounds]);
 
-  // Build columns: one per panelist
+  // Build columns: one per panelist, strictly filtered by phase
   const columns: PanelistColumn[] = panelistIds.map((pid) => {
     const p = panelistMap.get(pid);
     const col: PanelistColumn = {
@@ -80,8 +163,12 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
       entries: [],
     };
 
-    const filteredRounds = filterPhases ? rounds.filter((r) => filterPhases.includes(r.phase)) : rounds;
-    for (const round of filteredRounds) {
+    // Strict phase filtering — only show rounds that match the filter
+    const visibleRounds = filterPhases && filterPhases.length > 0
+      ? rounds.filter((r) => filterPhases.includes(r.phase))
+      : rounds;
+
+    for (const round of visibleRounds) {
       const contrib = round.contributions.find((c) => c.panelistId === pid);
       if (contrib && (contrib.content || contrib.thinkingContent || contrib.isStreaming)) {
         col.entries.push({
@@ -105,6 +192,8 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
       </div>
     );
   }
+
+  const hasContent = columns.some((c) => c.entries.length > 0);
 
   return (
     <div ref={columnsRef} className="flex-1 grid gap-3 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
@@ -130,7 +219,7 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
             )}
           </div>
 
-          {/* Column body — scrollable, content flows top to bottom */}
+          {/* Column body */}
           <div
             data-column-body
             onScroll={(e) => {
@@ -153,13 +242,8 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
                   <ThinkingBlock content={entry.thinkingContent} isStreaming={entry.isThinkingStreaming} />
                 )}
 
-                {/* Content */}
-                <div className="prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-p:text-gray-700 prose-li:text-[13px] prose-li:text-gray-700 prose-strong:text-gray-800 prose-code:text-xs prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:text-xs prose-blockquote:border-indigo-300 prose-blockquote:text-gray-600 prose-a:text-indigo-600 prose-hr:border-gray-200">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.content || ''}</ReactMarkdown>
-                  {entry.isStreaming && (
-                    <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm" />
-                  )}
-                </div>
+                {/* Content — JSON gets pretty cards, everything else gets markdown */}
+                <ContentRenderer content={entry.content} isStreaming={entry.isStreaming} />
 
                 {/* Divider between entries */}
                 {i < col.entries.length - 1 && <div className="border-t border-gray-100 mt-3" />}
@@ -167,7 +251,9 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
             ))}
 
             {col.entries.length === 0 && (
-              <div className="text-xs text-gray-300 italic pt-4 text-center">Waiting...</div>
+              <div className="text-xs text-gray-300 italic pt-4 text-center">
+                {hasContent ? 'No content in this phase' : 'Waiting...'}
+              </div>
             )}
           </div>
         </div>
