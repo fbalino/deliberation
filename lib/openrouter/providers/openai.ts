@@ -33,7 +33,7 @@ function buildBody(params: CallModelParams, stream: boolean) {
 
   // Chat Completions API uses top-level "reasoning_effort" (not nested "reasoning")
   // temperature is NOT supported when reasoning_effort is anything other than "none"
-  body.reasoning_effort = 'high';
+  body.reasoning_effort = 'medium';
 
   return body;
 }
