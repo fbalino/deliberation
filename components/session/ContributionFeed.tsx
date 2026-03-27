@@ -172,10 +172,15 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
     for (const round of visibleRounds) {
       const contrib = round.contributions.find((c) => c.panelistId === pid);
       if (contrib && (contrib.content || contrib.thinkingContent || contrib.isStreaming)) {
+        // For drafting phase, replace the full resolution with a short note
+        // (the full draft is shown in the Resolution tab)
+        const isDraftContent = round.phase === 'drafting' && contrib.content.length > 500;
         col.entries.push({
           phase: round.phase,
           roundNumber: round.roundNumber,
-          content: contrib.content,
+          content: isDraftContent
+            ? `*Drafted the resolution document (${Math.round(contrib.content.length / 1000)}k chars). See the Resolution tab for the full document.*`
+            : contrib.content,
           thinkingContent: contrib.thinkingContent,
           isStreaming: contrib.isStreaming,
           isThinkingStreaming: contrib.isThinkingStreaming,

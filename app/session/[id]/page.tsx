@@ -348,19 +348,13 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Main content: Resolution / Draft / Column feed */}
+      {/* Main content: Resolution panel OR Column feed */}
       {activeTab === 'completed' ? (
         <ResolutionPanel
           resolution={state.resolution}
           panelists={panelists}
           rounds={state.rounds}
           sessionId={sessionId}
-        />
-      ) : activeTab === 'drafting' ? (
-        <DraftView
-          rounds={state.rounds}
-          panelists={panelists}
-          electedDrafterId={state.electedDrafter}
         />
       ) : (
         <ContributionFeed
