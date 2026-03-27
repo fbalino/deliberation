@@ -1,5 +1,5 @@
 import type { TokenUsage } from '@/lib/supabase/types';
-import type { CallModelParams, StreamChunk, ModelResponse, Message } from '../types';
+import type { CallModelParams, StreamChunk, ModelResponse } from '../types';
 import { getModelById } from '../models';
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
@@ -29,11 +29,11 @@ function buildBody(params: CallModelParams, stream: boolean) {
   if (stream) {
     body.stream_options = { include_usage: true };
   }
-  // GPT-5 series uses max_completion_tokens, not max_tokens
   if (params.maxTokens) body.max_completion_tokens = params.maxTokens;
-  if (params.temperature !== undefined) body.temperature = params.temperature;
-  // Always enable reasoning/thinking
-  body.reasoning = { effort: 'high' };
+
+  // Chat Completions API uses top-level "reasoning_effort" (not nested "reasoning")
+  // temperature is NOT supported when reasoning_effort is anything other than "none"
+  body.reasoning_effort = 'high';
 
   return body;
 }
@@ -92,7 +92,6 @@ export async function* openaiStream(params: CallModelParams): AsyncGenerator<Str
         try {
           const data = JSON.parse(payload);
 
-          // Usage comes in a chunk with usage field
           if (data.usage) {
             const u = data.usage;
             usage = {
@@ -110,7 +109,6 @@ export async function* openaiStream(params: CallModelParams): AsyncGenerator<Str
           if (delta.content) {
             yield { type: 'content', text: delta.content };
           }
-          // OpenAI reasoning tokens (o-series models)
           const reasoning = delta.reasoning_content || delta.reasoning;
           if (reasoning) {
             yield { type: 'reasoning', text: typeof reasoning === 'string' ? reasoning : '' };
