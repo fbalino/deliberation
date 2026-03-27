@@ -8,6 +8,7 @@ import { InterventionBar } from '@/components/session/InterventionBar';
 import { VoteSummary } from '@/components/session/VoteSummary';
 import { PhaseTransition } from '@/components/session/PhaseTransition';
 import { ResolutionPanel } from '@/components/session/ResolutionPanel';
+import { DraftView } from '@/components/session/DraftView';
 import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist, DbResolution } from '@/lib/supabase/types';
 
 interface SessionState {
@@ -347,13 +348,19 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Main content: Resolution panel OR Column feed */}
+      {/* Main content: Resolution / Draft / Column feed */}
       {activeTab === 'completed' ? (
         <ResolutionPanel
           resolution={state.resolution}
           panelists={panelists}
           rounds={state.rounds}
           sessionId={sessionId}
+        />
+      ) : activeTab === 'drafting' ? (
+        <DraftView
+          rounds={state.rounds}
+          panelists={panelists}
+          electedDrafterId={state.electedDrafter}
         />
       ) : (
         <ContributionFeed
