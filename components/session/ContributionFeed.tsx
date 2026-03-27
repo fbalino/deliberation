@@ -153,13 +153,10 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
                 )}
 
                 {/* Content */}
-                <div className="prose prose-sm max-w-none text-gray-700 text-[13px] leading-relaxed">
+                <div className="prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-p:text-gray-700 prose-li:text-[13px] prose-li:text-gray-700 prose-strong:text-gray-800 prose-code:text-xs prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:text-xs prose-blockquote:border-indigo-300 prose-blockquote:text-gray-600 prose-a:text-indigo-600 prose-hr:border-gray-200">
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.content || ''}</ReactMarkdown>
-                  {entry.isStreaming && !entry.content && (
+                  {entry.isStreaming && (
                     <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm" />
-                  )}
-                  {entry.isStreaming && entry.content && (
-                    <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm ml-0.5" />
                   )}
                 </div>
 

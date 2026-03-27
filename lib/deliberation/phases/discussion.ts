@@ -39,7 +39,6 @@ export async function runDiscussionPhase(
   const aiPanelists = panelists.filter((p) => !p.is_human);
 
   for (let roundNum = 1; roundNum <= config.suggested_rounds; roundNum++) {
-    // Check for interventions
     const interventions = await checkInterventions();
 
     if (interventions.forceAdvance) {
@@ -53,10 +52,8 @@ export async function runDiscussionPhase(
       emit({ type: 'intervention_prompt', message: 'Discussion resumed' });
     }
 
-    // Check hard cap
     if (roundNum > config.hard_round_cap) break;
 
-    // Create round
     const { data: round } = await supabaseServer
       .from('rounds')
       .insert({ session_id: sessionId, phase: 'discussion', round_number: roundNum })
@@ -67,7 +64,6 @@ export async function runDiscussionPhase(
 
     emit({ type: 'round_start', round: roundNum, phase: 'discussion' });
 
-    // Fit content to context window for the first panelist's model (use smallest window)
     const fitted = contextManager.fitToContext({
       systemPrompt: '',
       briefing: session.briefing_text || '',
@@ -80,56 +76,31 @@ export async function runDiscussionPhase(
       emit({ type: 'intervention_prompt', message: 'Context was truncated to fit model limits' });
     }
 
-    // Fan out simultaneous calls
     const roundContributions: { name: string; content: string }[] = [];
     let consensusCount = 0;
 
-    await Promise.all(
-      aiPanelists.map(async (panelist) => {
+    if (config.turn_order === 'sequential') {
+      // ---- SEQUENTIAL MODE ----
+      // Each panelist responds one at a time, seeing all previous speakers in this round
+      let currentRoundTranscript = '';
+
+      for (const panelist of aiPanelists) {
         emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
+        // Build prompt with previous speakers' responses from THIS round included
         const { system, user } = discussionPrompt({
           briefing: session.briefing_text || '',
           analyses: analysesText,
-          discussionTranscript,
+          discussionTranscript: discussionTranscript + (currentRoundTranscript ? `\n--- Round ${roundNum} (in progress) ---\n${currentRoundTranscript}` : ''),
           roundNumber: roundNum,
           nudge: interventions.nudge || undefined,
           panelistSystemPrompt: panelist.system_prompt || undefined,
         });
 
-        let content = '';
-        let thinkingContent = '';
-        let usage: TokenUsage = {
-          input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cached_tokens: 0, cost_cents: 0,
-        };
-
-        try {
-          const stream = callModelStream({
-            modelId: panelist.model_id,
-            messages: [{ role: 'user', content: user }],
-            systemPrompt: system,
-            stream: true,
-          });
-
-          for await (const chunk of stream) {
-            if (chunk.type === 'content') {
-              content += chunk.text;
-              emit({ type: 'contribution_chunk', panelistId: panelist.id, text: chunk.text, isThinking: false });
-            } else if (chunk.type === 'reasoning') {
-              thinkingContent += chunk.text;
-              emit({ type: 'contribution_chunk', panelistId: panelist.id, text: chunk.text, isThinking: true });
-            } else if (chunk.type === 'done') {
-              usage = chunk.usage;
-            }
-          }
-        } catch (error) {
-          content = content || `[Response unavailable: ${error instanceof Error ? error.message : 'unknown error'}]`;
-        }
-
-        emit({ type: 'contribution_end', panelistId: panelist.id, tokenUsage: usage });
+        const result = await callAndStream(panelist, system, user, emit);
 
         // Consensus detection
-        const consensus = detectConsensus(content);
+        const consensus = detectConsensus(result.content);
         if (consensus.consensusSignal) {
           consensusCount++;
           emit({ type: 'consensus_signal', panelistId: panelist.id });
@@ -142,10 +113,10 @@ export async function runDiscussionPhase(
         await supabaseServer.from('contributions').insert({
           round_id: round.id,
           panelist_id: panelist.id,
-          content,
-          thinking_content: thinkingContent || null,
-          token_usage: usage,
-          cost_cents: usage.cost_cents,
+          content: result.content,
+          thinking_content: result.thinkingContent || null,
+          token_usage: result.usage,
+          cost_cents: result.usage.cost_cents,
         });
 
         await logCost({
@@ -154,12 +125,62 @@ export async function runDiscussionPhase(
           phase: 'discussion',
           roundNumber: roundNum,
           modelId: panelist.model_id,
-          usage,
+          usage: result.usage,
         });
 
-        roundContributions.push({ name: panelist.display_name, content });
-      })
-    );
+        // Add to this round's running transcript so next speaker sees it
+        currentRoundTranscript += `[${panelist.display_name}]:\n${result.content}\n\n`;
+        roundContributions.push({ name: panelist.display_name, content: result.content });
+      }
+    } else {
+      // ---- SIMULTANEOUS MODE ----
+      // All panelists respond at the same time, can't see each other mid-round
+      await Promise.all(
+        aiPanelists.map(async (panelist) => {
+          emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
+
+          const { system, user } = discussionPrompt({
+            briefing: session.briefing_text || '',
+            analyses: analysesText,
+            discussionTranscript,
+            roundNumber: roundNum,
+            nudge: interventions.nudge || undefined,
+            panelistSystemPrompt: panelist.system_prompt || undefined,
+          });
+
+          const result = await callAndStream(panelist, system, user, emit);
+
+          const consensus = detectConsensus(result.content);
+          if (consensus.consensusSignal) {
+            consensusCount++;
+            emit({ type: 'consensus_signal', panelistId: panelist.id });
+          }
+          if (consensus.extensionRequest && consensus.extensionReason) {
+            emit({ type: 'extension_request', panelistId: panelist.id, reason: consensus.extensionReason });
+          }
+
+          await supabaseServer.from('contributions').insert({
+            round_id: round.id,
+            panelist_id: panelist.id,
+            content: result.content,
+            thinking_content: result.thinkingContent || null,
+            token_usage: result.usage,
+            cost_cents: result.usage.cost_cents,
+          });
+
+          await logCost({
+            sessionId,
+            panelistId: panelist.id,
+            phase: 'discussion',
+            roundNumber: roundNum,
+            modelId: panelist.model_id,
+            usage: result.usage,
+          });
+
+          roundContributions.push({ name: panelist.display_name, content: result.content });
+        })
+      );
+    }
 
     // Update running transcript
     discussionTranscript += `\n--- Round ${roundNum} ---\n`;
@@ -167,10 +188,47 @@ export async function runDiscussionPhase(
       discussionTranscript += `[${c.name}]:\n${c.content}\n\n`;
     }
 
-    // Early termination if majority signals consensus
     if (consensusCount > aiPanelists.length / 2) {
       emit({ type: 'intervention_prompt', message: 'Majority consensus reached — advancing to drafting' });
       break;
     }
   }
+}
+
+/** Stream a model call, accumulate content, emit chunks, return result */
+async function callAndStream(
+  panelist: DbPanelist,
+  system: string,
+  user: string,
+  emit: (event: SSEEvent) => void
+): Promise<{ content: string; thinkingContent: string; usage: TokenUsage }> {
+  let content = '';
+  let thinkingContent = '';
+  let usage: TokenUsage = { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cached_tokens: 0, cost_cents: 0 };
+
+  try {
+    const stream = callModelStream({
+      modelId: panelist.model_id,
+      messages: [{ role: 'user', content: user }],
+      systemPrompt: system,
+      stream: true,
+    });
+
+    for await (const chunk of stream) {
+      if (chunk.type === 'content') {
+        content += chunk.text;
+        emit({ type: 'contribution_chunk', panelistId: panelist.id, text: chunk.text, isThinking: false });
+      } else if (chunk.type === 'reasoning') {
+        thinkingContent += chunk.text;
+        emit({ type: 'contribution_chunk', panelistId: panelist.id, text: chunk.text, isThinking: true });
+      } else if (chunk.type === 'done') {
+        usage = chunk.usage;
+      }
+    }
+  } catch (error) {
+    content = content || `[Response unavailable: ${error instanceof Error ? error.message : 'unknown error'}]`;
+  }
+
+  emit({ type: 'contribution_end', panelistId: panelist.id, tokenUsage: usage });
+  return { content, thinkingContent, usage };
 }
