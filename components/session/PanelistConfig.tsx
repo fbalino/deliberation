@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { MODEL_REGISTRY, AVATAR_COLORS } from '@/lib/openrouter/models';
 import type { PanelistConfig as PanelistConfigType } from '@/lib/supabase/types';
+
+type ModelStatus = { ok: boolean; error?: string; latencyMs: number };
 
 interface Props {
   panelists: PanelistConfigType[];
@@ -13,6 +15,22 @@ interface Props {
 
 export function PanelistConfig({ panelists, onChange }: Props) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const [modelStatus, setModelStatus] = useState<Record<string, ModelStatus>>({});
+  const [checking, setChecking] = useState(false);
+
+  // Check model health on mount
+  useEffect(() => {
+    checkModels();
+  }, []);
+
+  async function checkModels() {
+    setChecking(true);
+    try {
+      const res = await fetch('/api/health/models');
+      if (res.ok) setModelStatus(await res.json());
+    } catch { /* ignore */ }
+    setChecking(false);
+  }
 
   function addPanelist() {
     const model = MODEL_REGISTRY[panelists.length % MODEL_REGISTRY.length];
@@ -38,10 +56,54 @@ export function PanelistConfig({ panelists, onChange }: Props) {
     onChange(panelists.map((p, i) => (i === index ? { ...p, ...updates } : p)));
   }
 
+  function StatusDot({ modelId }: { modelId: string }) {
+    const status = modelStatus[modelId];
+
+    if (checking && !status) {
+      return (
+        <span className="relative flex h-3 w-3 shrink-0" title="Checking...">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-400" />
+        </span>
+      );
+    }
+
+    if (!status) {
+      return <span className="inline-flex rounded-full h-3 w-3 bg-gray-300 shrink-0" title="Not checked" />;
+    }
+
+    if (status.ok) {
+      return (
+        <span
+          className="inline-flex rounded-full h-3 w-3 bg-green-500 shrink-0"
+          title={`Connected (${status.latencyMs}ms)`}
+        />
+      );
+    }
+
+    return (
+      <span
+        className="inline-flex rounded-full h-3 w-3 bg-red-500 shrink-0 cursor-help"
+        title={status.error || 'Connection failed'}
+      />
+    );
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-medium text-gray-700">Panelists ({panelists.length})</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-medium text-gray-700">Panelists ({panelists.length})</h3>
+          <button
+            type="button"
+            onClick={checkModels}
+            disabled={checking}
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+            title="Re-check model connections"
+          >
+            {checking ? 'checking...' : 'test connections'}
+          </button>
+        </div>
         <Button variant="secondary" size="sm" onClick={addPanelist}>
           + Add Panelist
         </Button>
@@ -64,6 +126,9 @@ export function PanelistConfig({ panelists, onChange }: Props) {
               }}
               title="Click to change color"
             />
+
+            {/* Status dot */}
+            <StatusDot modelId={panelist.model_id} />
 
             {/* Display name */}
             <Input
@@ -106,6 +171,20 @@ export function PanelistConfig({ panelists, onChange }: Props) {
               Remove
             </Button>
           </div>
+
+          {/* Error message if connection failed */}
+          {modelStatus[panelist.model_id] && !modelStatus[panelist.model_id].ok && (
+            <p className="text-xs text-red-500 pl-14">
+              {modelStatus[panelist.model_id].error}
+            </p>
+          )}
+
+          {/* Latency if connected */}
+          {modelStatus[panelist.model_id]?.ok && (
+            <p className="text-xs text-green-600 pl-14">
+              Connected ({modelStatus[panelist.model_id].latencyMs}ms)
+            </p>
+          )}
 
           {/* System prompt (expandable) */}
           {expandedIndex === index && (
