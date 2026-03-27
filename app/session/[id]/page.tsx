@@ -10,6 +10,7 @@ import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPane
 
 interface SessionState {
   phase: SessionStatus;
+  currentRound: number;
   rounds: RoundGroup[];
   activeContributions: Map<string, { content: string; thinking: string; isStreaming: boolean; isThinkingStreaming: boolean }>;
   votes: Array<{ panelistId: string; panelistName: string; panelistColor: string; verdict: VoteVerdict; reasoning: string; amendments?: string | null }>;
@@ -28,7 +29,6 @@ function createContribId(panelistId: string, phase: string, round: number) {
 
 function reducer(state: SessionState, action: Action): SessionState {
   if (action.type === 'init') {
-    // Build state from loaded session data
     const session = action.session;
     const panelists = new Map(session.panelists.map((p) => [p.id, p]));
     const rounds: RoundGroup[] = [];
@@ -48,41 +48,22 @@ function reducer(state: SessionState, action: Action): SessionState {
           isThinkingStreaming: false,
         };
       });
-
-      rounds.push({
-        phase: round.phase as Phase,
-        roundNumber: round.round_number,
-        contributions,
-      });
+      rounds.push({ phase: round.phase as Phase, roundNumber: round.round_number, contributions });
     }
 
     const votes = session.rounds
       .filter((r) => r.phase === 'voting')
       .flatMap((r) =>
-        (r.contributions || [])
-          .filter((c) => c.vote_data)
-          .map((c) => {
-            const p = panelists.get(c.panelist_id);
-            const vd = c.vote_data as { verdict: VoteVerdict; reasoning: string; amendments?: string | null };
-            return {
-              panelistId: c.panelist_id,
-              panelistName: p?.display_name || 'Unknown',
-              panelistColor: p?.avatar_color || '#6366f1',
-              verdict: vd.verdict,
-              reasoning: vd.reasoning,
-              amendments: vd.amendments,
-            };
-          })
+        (r.contributions || []).filter((c) => c.vote_data).map((c) => {
+          const p = panelists.get(c.panelist_id);
+          const vd = c.vote_data as { verdict: VoteVerdict; reasoning: string; amendments?: string | null };
+          return { panelistId: c.panelist_id, panelistName: p?.display_name || 'Unknown', panelistColor: p?.avatar_color || '#6366f1', verdict: vd.verdict, reasoning: vd.reasoning, amendments: vd.amendments };
+        })
       );
 
-    return {
-      ...state,
-      phase: session.status,
-      rounds,
-      votes,
-      totalCostCents: session.total_cost_cents,
-      resolutionId: session.resolutions?.[0]?.id || null,
-    };
+    const maxRound = Math.max(0, ...rounds.filter(r => r.phase === 'discussion').map(r => r.roundNumber));
+
+    return { ...state, phase: session.status, rounds, votes, totalCostCents: session.total_cost_cents, resolutionId: session.resolutions?.[0]?.id || null, currentRound: maxRound };
   }
 
   switch (action.type) {
@@ -90,20 +71,32 @@ function reducer(state: SessionState, action: Action): SessionState {
       return { ...state, phase: action.phase };
 
     case 'round_start': {
-      const existing = state.rounds.find(
-        (r) => r.phase === action.phase && r.roundNumber === action.round
-      );
+      const existing = state.rounds.find((r) => r.phase === action.phase && r.roundNumber === action.round);
       if (existing) return state;
-      return {
-        ...state,
-        rounds: [...state.rounds, { phase: action.phase, roundNumber: action.round, contributions: [] }],
-      };
+      const newRound = action.phase === 'discussion' ? action.round : state.currentRound;
+      return { ...state, rounds: [...state.rounds, { phase: action.phase, roundNumber: action.round, contributions: [] }], currentRound: newRound };
     }
 
     case 'contribution_start': {
       const newActive = new Map(state.activeContributions);
       newActive.set(action.panelistId, { content: '', thinking: '', isStreaming: true, isThinkingStreaming: false });
-      return { ...state, activeContributions: newActive };
+      // Add placeholder to last round
+      const updatedRounds = [...state.rounds];
+      const lastRound = updatedRounds[updatedRounds.length - 1];
+      if (lastRound && !lastRound.contributions.find((c) => c.panelistId === action.panelistId)) {
+        lastRound.contributions.push({
+          id: `${action.panelistId}-live-${Date.now()}`,
+          panelistId: action.panelistId,
+          panelistName: action.panelistName,
+          panelistColor: '#6366f1',
+          modelId: '',
+          content: '',
+          thinkingContent: '',
+          isStreaming: true,
+          isThinkingStreaming: false,
+        });
+      }
+      return { ...state, activeContributions: newActive, rounds: updatedRounds };
     }
 
     case 'contribution_chunk': {
@@ -114,60 +107,34 @@ function reducer(state: SessionState, action: Action): SessionState {
       } else {
         newActive.set(action.panelistId, { ...current, content: current.content + action.text, isThinkingStreaming: false });
       }
-
-      // Update the latest round's contribution for this panelist
       const updatedRounds = [...state.rounds];
       const lastRound = updatedRounds[updatedRounds.length - 1];
       if (lastRound) {
         const active = newActive.get(action.panelistId)!;
-        const existingIdx = lastRound.contributions.findIndex((c) => c.panelistId === action.panelistId);
-        if (existingIdx >= 0) {
-          lastRound.contributions[existingIdx] = {
-            ...lastRound.contributions[existingIdx],
-            content: active.content,
-            thinkingContent: active.thinking,
-            isStreaming: true,
-            isThinkingStreaming: action.isThinking,
-          };
+        const idx = lastRound.contributions.findIndex((c) => c.panelistId === action.panelistId);
+        if (idx >= 0) {
+          lastRound.contributions[idx] = { ...lastRound.contributions[idx], content: active.content, thinkingContent: active.thinking, isStreaming: true, isThinkingStreaming: action.isThinking };
         }
       }
-
       return { ...state, activeContributions: newActive, rounds: updatedRounds };
     }
 
     case 'contribution_end': {
       const newActive = new Map(state.activeContributions);
       newActive.delete(action.panelistId);
-      // Mark contribution as done in the last round
       const updatedRounds = [...state.rounds];
       const lastRound = updatedRounds[updatedRounds.length - 1];
       if (lastRound) {
-        const existingIdx = lastRound.contributions.findIndex((c) => c.panelistId === action.panelistId);
-        if (existingIdx >= 0) {
-          lastRound.contributions[existingIdx] = {
-            ...lastRound.contributions[existingIdx],
-            isStreaming: false,
-            isThinkingStreaming: false,
-          };
+        const idx = lastRound.contributions.findIndex((c) => c.panelistId === action.panelistId);
+        if (idx >= 0) {
+          lastRound.contributions[idx] = { ...lastRound.contributions[idx], isStreaming: false, isThinkingStreaming: false };
         }
       }
       return { ...state, activeContributions: newActive, rounds: updatedRounds };
     }
 
     case 'vote_result':
-      return {
-        ...state,
-        votes: [
-          ...state.votes,
-          {
-            panelistId: action.panelistId,
-            panelistName: '',
-            panelistColor: '#6366f1',
-            verdict: action.verdict,
-            reasoning: action.reasoning,
-          },
-        ],
-      };
+      return { ...state, votes: [...state.votes, { panelistId: action.panelistId, panelistName: '', panelistColor: '#6366f1', verdict: action.verdict, reasoning: action.reasoning }] };
 
     case 'drafter_elected':
       return { ...state, electedDrafter: action.panelistId };
@@ -182,11 +149,7 @@ function reducer(state: SessionState, action: Action): SessionState {
       return { ...state, messages: [...state.messages, action.message] };
 
     case 'error':
-      return {
-        ...state,
-        messages: [...state.messages, `Error: ${action.message}`],
-        ...(action.fatal ? { phase: 'abandoned' as SessionStatus } : {}),
-      };
+      return { ...state, messages: [...state.messages, `Error: ${action.message}`], ...(action.fatal ? { phase: 'abandoned' as SessionStatus } : {}) };
 
     default:
       return state;
@@ -195,6 +158,7 @@ function reducer(state: SessionState, action: Action): SessionState {
 
 const INITIAL_STATE: SessionState = {
   phase: 'configuring',
+  currentRound: 0,
   rounds: [],
   activeContributions: new Map(),
   votes: [],
@@ -203,6 +167,18 @@ const INITIAL_STATE: SessionState = {
   isPaused: false,
   messages: [],
   resolutionId: null,
+};
+
+const PHASE_LABELS: Record<string, string> = {
+  configuring: 'Configuring',
+  briefing: 'Briefing',
+  analyzing: 'Analysis',
+  discussing: 'Discussion',
+  drafter_election: 'Electing Drafter',
+  drafting: 'Drafting',
+  voting: 'Voting',
+  completed: 'Complete',
+  abandoned: 'Abandoned',
 };
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
@@ -214,7 +190,6 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [startTime] = useState(Date.now());
   const [elapsed, setElapsed] = useState('0:00');
 
-  // Load session data
   useEffect(() => {
     async function load() {
       const res = await fetch(`/api/sessions/${sessionId}`);
@@ -229,132 +204,128 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     load();
   }, [sessionId]);
 
-  // SSE connection for live sessions
   useEffect(() => {
     if (loading) return;
     const isActive = !['completed', 'abandoned', 'configuring'].includes(state.phase);
     if (!isActive) return;
 
-    const panelistMap = new Map(panelists.map((p) => [p.id, p]));
-
     const es = new EventSource(`/api/sessions/${sessionId}/stream`);
     es.onmessage = (e) => {
-      const event: SSEEvent = JSON.parse(e.data);
-
-      // For contribution_start, add a placeholder to the current round
-      if (event.type === 'contribution_start') {
-        const p = panelistMap.get(event.panelistId);
-        dispatch({ type: 'round_start', round: 0, phase: 'analysis' }); // ensure round exists
-        // Add empty contribution
-        const lastRound = state.rounds[state.rounds.length - 1];
-        if (lastRound && !lastRound.contributions.find((c) => c.panelistId === event.panelistId)) {
-          lastRound.contributions.push({
-            id: `${event.panelistId}-live`,
-            panelistId: event.panelistId,
-            panelistName: p?.display_name || event.panelistName,
-            panelistColor: p?.avatar_color || '#6366f1',
-            modelId: p?.model_id || '',
-            content: '',
-            thinkingContent: '',
-            isStreaming: true,
-            isThinkingStreaming: false,
-          });
-        }
-      }
-
-      dispatch(event);
+      dispatch(JSON.parse(e.data) as SSEEvent);
     };
-    es.onerror = () => {
-      // EventSource auto-reconnects
-    };
+    es.onerror = () => {};
     return () => es.close();
-  }, [sessionId, loading, state.phase, panelists, state.rounds]);
+  }, [sessionId, loading, state.phase]);
 
-  // Elapsed time
   useEffect(() => {
     const isActive = !['completed', 'abandoned', 'configuring'].includes(state.phase);
     if (!isActive) return;
-
     const interval = setInterval(() => {
       const secs = Math.floor((Date.now() - startTime) / 1000);
-      const mins = Math.floor(secs / 60);
-      const s = secs % 60;
-      setElapsed(`${mins}:${s.toString().padStart(2, '0')}`);
+      setElapsed(`${Math.floor(secs / 60)}:${(secs % 60).toString().padStart(2, '0')}`);
     }, 1000);
     return () => clearInterval(interval);
   }, [state.phase, startTime]);
 
-  if (loading) {
-    return <div className="text-center py-12 text-gray-400">Loading session...</div>;
-  }
+  if (loading) return <div className="text-center py-12 text-gray-400">Loading session...</div>;
 
   const isActive = !['completed', 'abandoned', 'configuring'].includes(state.phase);
+  const panelistMap = new Map(panelists.map((p) => [p.id, p as { display_name: string; avatar_color: string | null; model_id: string }]));
+  const panelistIds = panelists.filter((p) => !p.is_human).map((p) => p.id);
+  const totalRounds = state.rounds.filter((r) => r.phase === 'discussion').length;
+  const streamingCount = state.activeContributions.size;
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="flex items-center justify-between pb-4 border-b border-gray-200 mb-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-xl font-bold">{sessionTitle}</h2>
-            <StatusBadge status={state.phase} />
+      {/* Top bar — session info counter */}
+      <div className="flex items-start justify-between pb-3 border-b border-gray-200 mb-3 gap-4">
+        {/* Left: session info counter */}
+        <div className="flex items-center gap-6">
+          {/* Round counter */}
+          <div className="flex items-center gap-3 bg-gray-900 text-white px-4 py-2.5 rounded-lg">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-gray-400">Phase</div>
+              <div className="text-sm font-semibold">{PHASE_LABELS[state.phase] || state.phase}</div>
+            </div>
+            <div className="w-px h-8 bg-gray-700" />
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-gray-400">Round</div>
+              <div className="text-sm font-semibold">{state.currentRound || '-'} / {totalRounds || '-'}</div>
+            </div>
+            <div className="w-px h-8 bg-gray-700" />
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-gray-400">Cost</div>
+              <div className="text-sm font-semibold">${(state.totalCostCents / 100).toFixed(2)}</div>
+            </div>
+            {isActive && (
+              <>
+                <div className="w-px h-8 bg-gray-700" />
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-gray-400">Time</div>
+                  <div className="text-sm font-mono">{elapsed}</div>
+                </div>
+              </>
+            )}
+            {streamingCount > 0 && (
+              <>
+                <div className="w-px h-8 bg-gray-700" />
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  <span className="text-xs text-green-400">{streamingCount} streaming</span>
+                </div>
+              </>
+            )}
           </div>
-          <div className="flex items-center gap-4 text-sm text-gray-500 mt-1">
-            <span>${(state.totalCostCents / 100).toFixed(2)}</span>
-            {isActive && <span>{elapsed}</span>}
+
+          {/* Title + status */}
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold truncate max-w-xs">{sessionTitle}</h2>
+              <StatusBadge status={state.phase} />
+            </div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              {panelists.length} panelists
+            </div>
           </div>
         </div>
+
+        {/* Right: phase stepper */}
         <PhaseIndicator currentPhase={state.phase} />
       </div>
 
-      {/* Messages / notifications */}
+      {/* Messages */}
       {state.messages.length > 0 && (
-        <div className="mb-4 space-y-1">
-          {state.messages.slice(-3).map((msg, i) => (
-            <div key={i} className="text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded">
-              {msg}
-            </div>
+        <div className="mb-2 space-y-1">
+          {state.messages.slice(-2).map((msg, i) => (
+            <div key={i} className="text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded">{msg}</div>
           ))}
         </div>
       )}
 
-      {/* Vote Summary (shown during/after voting) */}
+      {/* Vote Summary */}
       {state.votes.length > 0 && (
-        <div className="mb-4">
-          <VoteSummary
-            votes={state.votes.map((v) => {
-              const p = panelists.find((p) => p.id === v.panelistId);
-              return {
-                ...v,
-                panelistName: p?.display_name || v.panelistName || 'Unknown',
-                panelistColor: p?.avatar_color || v.panelistColor,
-              };
-            })}
-          />
+        <div className="mb-3">
+          <VoteSummary votes={state.votes.map((v) => {
+            const p = panelists.find((p) => p.id === v.panelistId);
+            return { ...v, panelistName: p?.display_name || v.panelistName || 'Unknown', panelistColor: p?.avatar_color || v.panelistColor };
+          })} />
         </div>
       )}
 
       {/* Resolution link */}
       {state.resolutionId && state.phase === 'completed' && (
-        <div className="mb-4 p-4 bg-green-50 border border-green-200 rounded-lg">
-          <a
-            href={`/session/${sessionId}/resolution`}
-            className="text-green-700 font-medium hover:underline"
-          >
+        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+          <a href={`/session/${sessionId}/resolution`} className="text-green-700 font-medium hover:underline text-sm">
             View Final Resolution →
           </a>
         </div>
       )}
 
-      {/* Contribution Feed */}
-      <ContributionFeed rounds={state.rounds} />
+      {/* Column-based contribution feed */}
+      <ContributionFeed rounds={state.rounds} panelistIds={panelistIds} panelistMap={panelistMap} />
 
       {/* Intervention Bar */}
-      <InterventionBar
-        sessionId={sessionId}
-        isPaused={state.isPaused}
-        isActive={isActive}
-      />
+      <InterventionBar sessionId={sessionId} isPaused={state.isPaused} isActive={isActive} />
     </div>
   );
 }

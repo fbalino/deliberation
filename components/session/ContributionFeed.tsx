@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { ContributionCard } from './ContributionCard';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import { ThinkingBlock } from './ThinkingBlock';
 import type { Phase } from '@/lib/supabase/types';
 
 export interface ContributionItem {
@@ -22,79 +24,152 @@ export interface RoundGroup {
   contributions: ContributionItem[];
 }
 
-interface Props {
-  rounds: RoundGroup[];
+interface PanelistColumn {
+  panelistId: string;
+  panelistName: string;
+  panelistColor: string;
+  modelId: string;
+  entries: Array<{
+    phase: string;
+    roundNumber: number;
+    content: string;
+    thinkingContent: string;
+    isStreaming: boolean;
+    isThinkingStreaming: boolean;
+  }>;
 }
 
-const PHASE_LABELS: Record<string, string> = {
-  analysis: 'Independent Analysis',
+interface Props {
+  rounds: RoundGroup[];
+  panelistIds: string[];
+  panelistMap: Map<string, { display_name: string; avatar_color: string | null; model_id: string }>;
+}
+
+const PHASE_SHORT: Record<string, string> = {
+  analysis: 'Analysis',
   discussion: 'Discussion',
-  drafter_election: 'Drafter Election',
-  drafting: 'Drafting',
-  voting: 'Voting',
+  drafter_election: 'Election',
+  drafting: 'Draft',
+  voting: 'Vote',
 };
 
-export function ContributionFeed({ rounds }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const userScrolledRef = useRef(false);
+export function ContributionFeed({ rounds, panelistIds, panelistMap }: Props) {
+  const columnsRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom when new content arrives, but respect user scroll position
+  // Auto-scroll each column to bottom
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container || userScrolledRef.current) return;
-
-    container.scrollTop = container.scrollHeight;
+    if (!columnsRef.current) return;
+    const cols = columnsRef.current.querySelectorAll('[data-column]');
+    cols.forEach((col) => {
+      const el = col as HTMLElement;
+      const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+      if (isAtBottom || el.dataset.userScrolled !== 'true') {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
   }, [rounds]);
 
-  function handleScroll() {
-    const container = containerRef.current;
-    if (!container) return;
+  // Build columns: one per panelist
+  const columns: PanelistColumn[] = panelistIds.map((pid) => {
+    const p = panelistMap.get(pid);
+    const col: PanelistColumn = {
+      panelistId: pid,
+      panelistName: p?.display_name || 'Unknown',
+      panelistColor: p?.avatar_color || '#6366f1',
+      modelId: p?.model_id || '',
+      entries: [],
+    };
 
-    const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-    userScrolledRef.current = !isAtBottom;
-  }
+    for (const round of rounds) {
+      const contrib = round.contributions.find((c) => c.panelistId === pid);
+      if (contrib && (contrib.content || contrib.thinkingContent || contrib.isStreaming)) {
+        col.entries.push({
+          phase: round.phase,
+          roundNumber: round.roundNumber,
+          content: contrib.content,
+          thinkingContent: contrib.thinkingContent,
+          isStreaming: contrib.isStreaming,
+          isThinkingStreaming: contrib.isThinkingStreaming,
+        });
+      }
+    }
 
-  if (rounds.length === 0) {
+    return col;
+  });
+
+  if (columns.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center text-gray-400">
-        <p>Waiting for deliberation to begin...</p>
+        Waiting for deliberation to begin...
       </div>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="flex-1 overflow-y-auto px-4"
-    >
-      {rounds.map((round, roundIndex) => (
-        <div key={`${round.phase}-${round.roundNumber}`}>
-          {/* Round divider */}
-          <div className="flex items-center gap-3 py-3">
-            <div className="h-px flex-1 bg-gray-200" />
-            <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
-              {PHASE_LABELS[round.phase] || round.phase}
-              {round.phase === 'discussion' ? ` — Round ${round.roundNumber}` : ''}
-            </span>
-            <div className="h-px flex-1 bg-gray-200" />
+    <div ref={columnsRef} className="flex-1 grid gap-3 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
+      {columns.map((col) => (
+        <div
+          key={col.panelistId}
+          data-column
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+            el.dataset.userScrolled = atBottom ? 'false' : 'true';
+          }}
+          className="flex flex-col border border-gray-200 rounded-lg overflow-hidden min-h-0"
+        >
+          {/* Column header */}
+          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 bg-gray-50 shrink-0">
+            <div
+              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+              style={{ backgroundColor: col.panelistColor }}
+            >
+              {col.panelistName.charAt(0)}
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-gray-900 truncate">{col.panelistName}</div>
+              <div className="text-[10px] text-gray-400 truncate">{col.modelId}</div>
+            </div>
+            {col.entries.some((e) => e.isStreaming) && (
+              <span className="ml-auto inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0" />
+            )}
           </div>
 
-          {/* Contributions */}
-          {round.contributions.map((contrib) => (
-            <ContributionCard
-              key={contrib.id}
-              panelistName={contrib.panelistName}
-              panelistColor={contrib.panelistColor}
-              modelId={contrib.modelId}
-              content={contrib.content}
-              thinkingContent={contrib.thinkingContent}
-              isStreaming={contrib.isStreaming}
-              isThinkingStreaming={contrib.isThinkingStreaming}
-            />
-          ))}
+          {/* Column body — scrollable */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-3">
+            {col.entries.map((entry, i) => (
+              <div key={`${entry.phase}-${entry.roundNumber}`}>
+                {/* Phase/round label */}
+                <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">
+                  {PHASE_SHORT[entry.phase] || entry.phase}
+                  {entry.phase === 'discussion' ? ` R${entry.roundNumber}` : ''}
+                </div>
 
-          {roundIndex < rounds.length - 1 && <div className="h-2" />}
+                {/* Thinking (collapsible) */}
+                {entry.thinkingContent && (
+                  <ThinkingBlock content={entry.thinkingContent} isStreaming={entry.isThinkingStreaming} />
+                )}
+
+                {/* Content */}
+                <div className="prose prose-sm max-w-none text-gray-700 text-[13px] leading-relaxed">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{entry.content || ''}</ReactMarkdown>
+                  {entry.isStreaming && !entry.content && (
+                    <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm" />
+                  )}
+                  {entry.isStreaming && entry.content && (
+                    <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm ml-0.5" />
+                  )}
+                </div>
+
+                {/* Divider between entries */}
+                {i < col.entries.length - 1 && <div className="border-t border-gray-100 mt-3" />}
+              </div>
+            ))}
+
+            {col.entries.length === 0 && (
+              <div className="text-xs text-gray-300 italic pt-4 text-center">Waiting...</div>
+            )}
+          </div>
         </div>
       ))}
     </div>
