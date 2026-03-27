@@ -3,69 +3,62 @@
 import type { SessionStatus } from '@/lib/supabase/types';
 
 const PHASES = [
-  { key: 'analyzing', label: 'Analysis' },
-  { key: 'discussing', label: 'Discussion' },
-  { key: 'drafting', label: 'Drafting' },
-  { key: 'voting', label: 'Voting' },
-  { key: 'completed', label: 'Resolution' },
+  { key: 'analyzing', label: 'Analysis', filterPhases: ['analysis'] },
+  { key: 'discussing', label: 'Discussion', filterPhases: ['discussion'] },
+  { key: 'drafting', label: 'Drafting', filterPhases: ['drafter_election', 'drafting'] },
+  { key: 'voting', label: 'Voting', filterPhases: ['voting'] },
+  { key: 'completed', label: 'Resolution', filterPhases: [] },
 ] as const;
 
 const PHASE_ORDER = PHASES.map((p) => p.key);
 
 interface Props {
   currentPhase: SessionStatus;
+  activeTab?: string | null;
+  onTabClick?: (phaseKey: string) => void;
 }
 
-export function PhaseIndicator({ currentPhase }: Props) {
+export function PhaseIndicator({ currentPhase, activeTab, onTabClick }: Props) {
   const currentIndex = PHASE_ORDER.indexOf(currentPhase as typeof PHASE_ORDER[number]);
-  // Treat drafter_election as part of discussing
-  const adjustedIndex = currentPhase === 'drafter_election' ? 1 : currentIndex;
+  const adjustedIndex = currentPhase === 'drafter_election' ? 2 : currentIndex;
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-1">
       {PHASES.map((phase, index) => {
-        const isCompleted = adjustedIndex > index || currentPhase === 'completed';
-        const isActive = adjustedIndex === index && currentPhase !== 'completed';
-        const isPending = adjustedIndex < index && currentPhase !== 'completed';
+        const isTerminal = currentPhase === 'completed' || currentPhase === 'abandoned';
+        const isCompleted = adjustedIndex > index || isTerminal;
+        const isActive = adjustedIndex === index && !isTerminal;
+        const isSelected = activeTab === phase.key;
+        const isClickable = isCompleted || isActive || isTerminal;
 
         return (
-          <div key={phase.key} className="flex items-center">
-            {index > 0 && (
-              <div
-                className={`h-0.5 w-8 mx-1 ${
-                  isCompleted ? 'bg-indigo-500' : 'bg-gray-200'
-                }`}
-              />
-            )}
-            <div className="flex items-center gap-1.5">
-              <div
-                className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
-                  isCompleted
-                    ? 'bg-indigo-500 text-white'
-                    : isActive
-                    ? 'bg-indigo-100 text-indigo-700 ring-2 ring-indigo-500'
-                    : 'bg-gray-100 text-gray-400'
-                }`}
-              >
-                {isCompleted ? (
-                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                  </svg>
-                ) : (
-                  index + 1
-                )}
-              </div>
-              <span
-                className={`text-xs font-medium hidden sm:inline ${
-                  isActive ? 'text-indigo-700' : isPending ? 'text-gray-400' : 'text-gray-600'
-                }`}
-              >
-                {phase.label}
-              </span>
-            </div>
-          </div>
+          <button
+            key={phase.key}
+            type="button"
+            disabled={!isClickable && !onTabClick}
+            onClick={() => onTabClick?.(phase.key)}
+            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              isSelected
+                ? 'bg-white shadow-sm text-gray-900'
+                : isActive
+                ? 'bg-indigo-50 text-indigo-700'
+                : isCompleted
+                ? 'text-gray-600 hover:bg-white/60 cursor-pointer'
+                : 'text-gray-400 cursor-default'
+            }`}
+          >
+            {/* Status dot */}
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+              isCompleted && !isActive ? 'bg-green-500' :
+              isActive ? 'bg-indigo-500 animate-pulse' :
+              'bg-gray-300'
+            }`} />
+            {phase.label}
+          </button>
         );
       })}
     </div>
   );
 }
+
+export { PHASES };

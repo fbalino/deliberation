@@ -2,10 +2,11 @@
 
 import { useEffect, useReducer, useState, use } from 'react';
 import { StatusBadge } from '@/components/ui/Badge';
-import { PhaseIndicator } from '@/components/session/PhaseIndicator';
+import { PhaseIndicator, PHASES } from '@/components/session/PhaseIndicator';
 import { ContributionFeed, type RoundGroup, type ContributionItem } from '@/components/session/ContributionFeed';
 import { InterventionBar } from '@/components/session/InterventionBar';
 import { VoteSummary } from '@/components/session/VoteSummary';
+import { PhaseTransition } from '@/components/session/PhaseTransition';
 import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist } from '@/lib/supabase/types';
 
 interface SessionState {
@@ -189,6 +190,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const [loading, setLoading] = useState(true);
   const [startTime] = useState(Date.now());
   const [elapsed, setElapsed] = useState('0:00');
+  const [activeTab, setActiveTab] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -289,8 +291,12 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           </div>
         </div>
 
-        {/* Right: phase stepper */}
-        <PhaseIndicator currentPhase={state.phase} />
+        {/* Right: clickable phase tabs */}
+        <PhaseIndicator
+          currentPhase={state.phase}
+          activeTab={activeTab}
+          onTabClick={(key) => setActiveTab(activeTab === key ? null : key)}
+        />
       </div>
 
       {/* Messages */}
@@ -302,8 +308,11 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Vote Summary */}
-      {state.votes.length > 0 && (
+      {/* Phase transition spinner — shows when streaming count is 0 but session is active */}
+      <PhaseTransition phase={state.phase} isTransitioning={isActive && streamingCount === 0 && state.rounds.length > 0} />
+
+      {/* Vote Summary — show when viewing voting tab or when votes exist and no tab filter */}
+      {state.votes.length > 0 && (!activeTab || activeTab === 'voting') && (
         <div className="mb-3">
           <VoteSummary votes={state.votes.map((v) => {
             const p = panelists.find((p) => p.id === v.panelistId);
@@ -312,8 +321,8 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Resolution link */}
-      {state.resolutionId && state.phase === 'completed' && (
+      {/* Resolution link — show when viewing resolution tab or completed */}
+      {state.resolutionId && (state.phase === 'completed' || activeTab === 'completed') && (
         <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
           <a href={`/session/${sessionId}/resolution`} className="text-green-700 font-medium hover:underline text-sm">
             View Final Resolution →
@@ -321,8 +330,13 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
         </div>
       )}
 
-      {/* Column-based contribution feed */}
-      <ContributionFeed rounds={state.rounds} panelistIds={panelistIds} panelistMap={panelistMap} />
+      {/* Column-based contribution feed with optional phase filter */}
+      <ContributionFeed
+        rounds={state.rounds}
+        panelistIds={panelistIds}
+        panelistMap={panelistMap}
+        filterPhases={activeTab ? [...(PHASES.find(p => p.key === activeTab)?.filterPhases ?? [])] : undefined}
+      />
 
       {/* Intervention Bar */}
       <InterventionBar sessionId={sessionId} isPaused={state.isPaused} isActive={isActive} />

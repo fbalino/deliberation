@@ -43,6 +43,7 @@ interface Props {
   rounds: RoundGroup[];
   panelistIds: string[];
   panelistMap: Map<string, { display_name: string; avatar_color: string | null; model_id: string }>;
+  filterPhases?: string[];
 }
 
 const PHASE_SHORT: Record<string, string> = {
@@ -53,7 +54,7 @@ const PHASE_SHORT: Record<string, string> = {
   voting: 'Vote',
 };
 
-export function ContributionFeed({ rounds, panelistIds, panelistMap }: Props) {
+export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhases }: Props) {
   const columnsRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll each column to bottom
@@ -80,7 +81,8 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap }: Props) {
       entries: [],
     };
 
-    for (const round of rounds) {
+    const filteredRounds = filterPhases ? rounds.filter((r) => filterPhases.includes(r.phase)) : rounds;
+    for (const round of filteredRounds) {
       const contrib = round.contributions.find((c) => c.panelistId === pid);
       if (contrib && (contrib.content || contrib.thinkingContent || contrib.isStreaming)) {
         col.entries.push({
