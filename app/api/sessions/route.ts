@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseServer } from '@/lib/supabase/server';
+import { fetchUrlContent } from '@/lib/files/url-fetcher';
 import type { CreateSessionRequest } from '@/lib/supabase/types';
 
 // POST: Create a new session
@@ -21,6 +22,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Fetch URL content and append to briefing
+    let augmentedBriefing = body.briefing_text;
+    if (body.briefing_urls && body.briefing_urls.length > 0) {
+      for (const url of body.briefing_urls) {
+        if (!url.trim()) continue;
+        try {
+          const { title, text } = await fetchUrlContent(url.trim());
+          augmentedBriefing += `\n\n--- Content from URL: ${title} (${url}) ---\n${text}`;
+        } catch (err) {
+          augmentedBriefing += `\n\n--- Failed to fetch URL: ${url} (${err instanceof Error ? err.message : 'unknown error'}) ---`;
+        }
+      }
+    }
+
     // Insert session
     const { data: session, error: sessionError } = await supabaseServer
       .from('sessions')
@@ -28,7 +43,7 @@ export async function POST(request: NextRequest) {
         title: body.title,
         status: 'configuring',
         config: body.config,
-        briefing_text: body.briefing_text,
+        briefing_text: augmentedBriefing,
         briefing_urls: body.briefing_urls || [],
         tags: body.tags || [],
       })
@@ -62,6 +77,26 @@ export async function POST(request: NextRequest) {
         { error: `Failed to create panelists: ${panelistError.message}` },
         { status: 500 }
       );
+    }
+
+    // Resolve pre-assigned drafter sort_order to real UUID
+    if (body.config.pre_assigned_drafter_id) {
+      const sortOrder = parseInt(body.config.pre_assigned_drafter_id);
+      if (!isNaN(sortOrder)) {
+        const { data: drafterPanelist } = await supabaseServer
+          .from('panelists')
+          .select('id')
+          .eq('session_id', session.id)
+          .eq('sort_order', sortOrder)
+          .single();
+
+        if (drafterPanelist) {
+          await supabaseServer
+            .from('sessions')
+            .update({ config: { ...body.config, pre_assigned_drafter_id: drafterPanelist.id } })
+            .eq('id', session.id);
+        }
+      }
     }
 
     return NextResponse.json({ id: session.id });

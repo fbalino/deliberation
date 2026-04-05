@@ -12,19 +12,20 @@ interface BadgeProps {
   className?: string;
 }
 
-const variantClasses: Record<BadgeVariant, string> = {
-  default: 'bg-gray-100 text-gray-700',
-  success: 'bg-green-100 text-green-700',
-  warning: 'bg-yellow-100 text-yellow-800',
-  danger: 'bg-red-100 text-red-700',
-  info: 'bg-blue-100 text-blue-700',
-  purple: 'bg-purple-100 text-purple-700',
+const variantStyles: Record<BadgeVariant, React.CSSProperties> = {
+  default: { background: 'var(--surface-inset)', color: 'var(--text-secondary)' },
+  success: { background: 'var(--success-subtle)', color: 'var(--success-text)' },
+  warning: { background: 'var(--warning-subtle)', color: 'var(--warning-text)' },
+  danger: { background: 'var(--danger-subtle)', color: 'var(--danger-text)' },
+  info: { background: 'var(--info-subtle)', color: 'var(--info-text)' },
+  purple: { background: 'var(--purple-subtle)', color: 'var(--purple-text)' },
 };
 
 export function Badge({ variant = 'default', className = '', children }: BadgeProps) {
   return (
     <span
-      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${variantClasses[variant]} ${className}`}
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-semibold tracking-wide ${className}`}
+      style={variantStyles[variant]}
     >
       {children}
     </span>

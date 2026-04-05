@@ -46,6 +46,53 @@ export async function POST(
       content: body.content || null,
     });
 
+    // For inject (participant mode), create Chair contribution in the current round
+    if (body.type === 'inject' && body.content) {
+      // Find or create the human Chair panelist
+      let { data: chairPanelist } = await supabaseServer
+        .from('panelists')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('is_human', true)
+        .single();
+
+      if (!chairPanelist) {
+        const { data: newChair } = await supabaseServer
+          .from('panelists')
+          .insert({
+            session_id: sessionId,
+            display_name: 'Chair',
+            model_id: 'human',
+            is_human: true,
+            sort_order: 999,
+            avatar_color: '#1e293b',
+          })
+          .select()
+          .single();
+        chairPanelist = newChair;
+      }
+
+      if (chairPanelist) {
+        // Find the latest discussion round
+        const { data: latestRound } = await supabaseServer
+          .from('rounds')
+          .select('id')
+          .eq('session_id', sessionId)
+          .eq('phase', 'discussion')
+          .order('round_number', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (latestRound) {
+          await supabaseServer.from('contributions').insert({
+            round_id: latestRound.id,
+            panelist_id: chairPanelist.id,
+            content: body.content,
+          });
+        }
+      }
+    }
+
     // For force_approve, also update the latest draft resolution
     if (body.type === 'force_approve') {
       const { data: resolutions } = await supabaseServer

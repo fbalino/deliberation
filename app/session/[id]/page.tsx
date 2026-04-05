@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useReducer, useState, use } from 'react';
+import { useRouter } from 'next/navigation';
 import { StatusBadge } from '@/components/ui/Badge';
 import { PhaseIndicator, PHASES } from '@/components/session/PhaseIndicator';
 import { ContributionFeed, type RoundGroup, type ContributionItem } from '@/components/session/ContributionFeed';
@@ -23,6 +24,7 @@ interface SessionState {
   messages: string[];
   resolutionId: string | null;
   resolution: DbResolution | null;
+  userRole: 'observer' | 'participant';
 }
 
 type Action = SSEEvent | { type: 'init'; session: SessionDetail };
@@ -68,7 +70,8 @@ function reducer(state: SessionState, action: Action): SessionState {
     const maxRound = Math.max(0, ...rounds.filter(r => r.phase === 'discussion').map(r => r.roundNumber));
 
     const approvedRes = session.resolutions?.find((r) => r.status === 'approved') || session.resolutions?.[0] || null;
-    return { ...state, phase: session.status, rounds, votes, totalCostCents: session.total_cost_cents, resolutionId: approvedRes?.id || null, resolution: approvedRes as DbResolution | null, currentRound: maxRound };
+    const sessionConfig = session.config as { user_role?: string } | undefined;
+    return { ...state, phase: session.status, rounds, votes, totalCostCents: session.total_cost_cents, resolutionId: approvedRes?.id || null, resolution: approvedRes as DbResolution | null, currentRound: maxRound, userRole: (sessionConfig?.user_role as 'observer' | 'participant') || 'observer' };
   }
 
   switch (action.type) {
@@ -85,7 +88,6 @@ function reducer(state: SessionState, action: Action): SessionState {
     case 'contribution_start': {
       const newActive = new Map(state.activeContributions);
       newActive.set(action.panelistId, { content: '', thinking: '', isStreaming: true, isThinkingStreaming: false });
-      // Add placeholder to last round
       const updatedRounds = [...state.rounds];
       const lastRound = updatedRounds[updatedRounds.length - 1];
       if (lastRound && !lastRound.contributions.find((c) => c.panelistId === action.panelistId)) {
@@ -173,6 +175,7 @@ const INITIAL_STATE: SessionState = {
   messages: [],
   resolutionId: null,
   resolution: null,
+  userRole: 'observer',
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -189,6 +192,7 @@ const PHASE_LABELS: Record<string, string> = {
 
 export default function SessionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params);
+  const router = useRouter();
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
   const [sessionTitle, setSessionTitle] = useState('');
   const [panelists, setPanelists] = useState<DbPanelist[]>([]);
@@ -256,7 +260,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     }
   }, [state.resolutionId, state.resolution, sessionId]);
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Loading session...</div>;
+  if (loading) return <div className="text-center py-12" style={{ color: 'var(--text-tertiary)' }}>Loading session...</div>;
 
   const isActive = !['completed', 'abandoned', 'configuring'].includes(state.phase);
   const panelistMap = new Map(panelists.map((p) => [p.id, p as { display_name: string; avatar_color: string | null; model_id: string }]));
@@ -264,7 +268,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   const totalRounds = state.rounds.filter((r) => r.phase === 'discussion').length;
   const streamingCount = state.activeContributions.size;
 
-  // Deduplicate votes — only keep the latest vote per panelist
+  // Deduplicate votes
   const deduplicatedVotes = (() => {
     const latest = new Map<string, typeof state.votes[number]>();
     for (const v of state.votes) {
@@ -278,53 +282,110 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
-      {/* Top bar — session info counter */}
-      <div className="flex items-start justify-between pb-3 border-b border-gray-200 mb-3 gap-4">
+      {/* Top bar */}
+      <div className="flex items-start justify-between pb-3 mb-3 gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
         {/* Left: session info counter */}
         <div className="flex items-center gap-6">
           {/* Round counter */}
-          <div className="flex items-center gap-3 bg-gray-900 text-white px-4 py-2.5 rounded-lg">
+          <div
+            className="flex items-center gap-3 px-4 py-2.5"
+            style={{
+              background: 'var(--sidebar-bg)',
+              color: 'var(--sidebar-text)',
+              borderRadius: 'var(--radius-lg)',
+            }}
+          >
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-400">Phase</div>
+              <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--sidebar-text-muted)' }}>Phase</div>
               <div className="text-sm font-semibold">{PHASE_LABELS[state.phase] || state.phase}</div>
             </div>
-            <div className="w-px h-8 bg-gray-700" />
+            <div className="w-px h-8" style={{ background: 'var(--sidebar-border)' }} />
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-400">Round</div>
+              <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--sidebar-text-muted)' }}>Round</div>
               <div className="text-sm font-semibold">{state.currentRound || '-'} / {totalRounds || '-'}</div>
             </div>
-            <div className="w-px h-8 bg-gray-700" />
+            <div className="w-px h-8" style={{ background: 'var(--sidebar-border)' }} />
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-gray-400">Cost</div>
+              <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--sidebar-text-muted)' }}>Cost</div>
               <div className="text-sm font-semibold">${(state.totalCostCents / 100).toFixed(2)}</div>
             </div>
             {isActive && (
               <>
-                <div className="w-px h-8 bg-gray-700" />
+                <div className="w-px h-8" style={{ background: 'var(--sidebar-border)' }} />
                 <div>
-                  <div className="text-[10px] uppercase tracking-wider text-gray-400">Time</div>
+                  <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--sidebar-text-muted)' }}>Time</div>
                   <div className="text-sm font-mono">{elapsed}</div>
                 </div>
               </>
             )}
             {streamingCount > 0 && (
               <>
-                <div className="w-px h-8 bg-gray-700" />
+                <div className="w-px h-8" style={{ background: 'var(--sidebar-border)' }} />
                 <div className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                  <span className="text-xs text-green-400">{streamingCount} streaming</span>
+                  <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--success)' }} />
+                  <span className="text-xs" style={{ color: 'var(--success)' }}>{streamingCount} streaming</span>
                 </div>
               </>
             )}
           </div>
 
-          {/* Title + status */}
+          {/* Title + status + actions */}
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-lg font-bold truncate max-w-xs">{sessionTitle}</h2>
+              <h2 className="dl-serif text-lg truncate max-w-xs" style={{ color: 'var(--text)' }}>{sessionTitle}</h2>
               <StatusBadge status={state.phase} />
+              <a
+                href={`/new?fork_from=${sessionId}`}
+                className="text-xs transition-colors ml-2"
+                style={{ color: 'var(--text-tertiary)' }}
+                title="Fork this session"
+              >
+                Fork
+              </a>
+              {(state.phase === 'completed' || state.phase === 'abandoned') && (
+                <button
+                  onClick={() => {
+                    if (!confirm('Re-run the drafting and voting phases? The same drafter will write a new complete draft.')) return;
+                    const es = new EventSource(`/api/sessions/${sessionId}/redraft`);
+                    es.onmessage = (e) => {
+                      dispatch(JSON.parse(e.data) as SSEEvent);
+                    };
+                    es.onerror = () => { es.close(); };
+                  }}
+                  className="text-xs font-medium transition-colors"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  Redraft
+                </button>
+              )}
+              {isActive && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Abandon this session? It cannot be resumed.')) return;
+                    await fetch(`/api/sessions/${sessionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'abandoned' }) });
+                    window.location.reload();
+                  }}
+                  className="text-xs transition-colors"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  Abandon
+                </button>
+              )}
+              {(state.phase === 'completed' || state.phase === 'abandoned') && (
+                <button
+                  onClick={async () => {
+                    if (!confirm('Delete this session permanently? This cannot be undone.')) return;
+                    await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
+                    router.push('/');
+                  }}
+                  className="text-xs transition-colors"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  Delete
+                </button>
+              )}
             </div>
-            <div className="text-xs text-gray-400 mt-0.5">
+            <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
               {panelists.length} panelists
             </div>
           </div>
@@ -342,12 +403,22 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       {state.messages.length > 0 && (
         <div className="mb-2 space-y-1">
           {state.messages.slice(-2).map((msg, i) => (
-            <div key={i} className="text-xs text-amber-700 bg-amber-50 px-3 py-1.5 rounded">{msg}</div>
+            <div
+              key={i}
+              className="text-xs px-3 py-1.5"
+              style={{
+                color: 'var(--warning-text)',
+                background: 'var(--warning-subtle)',
+                borderRadius: 'var(--radius-sm)',
+              }}
+            >
+              {msg}
+            </div>
           ))}
         </div>
       )}
 
-      {/* Phase transition spinner — shows when streaming count is 0 but session is active */}
+      {/* Phase transition spinner */}
       <PhaseTransition phase={state.phase} isTransitioning={isActive && streamingCount === 0 && state.rounds.length > 0} />
 
       {/* Vote Summary — only show inline when no tab is selected and session is done */}
@@ -385,7 +456,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
       )}
 
       {/* Intervention Bar */}
-      <InterventionBar sessionId={sessionId} isPaused={state.isPaused} isActive={isActive} />
+      <InterventionBar sessionId={sessionId} isPaused={state.isPaused} isActive={isActive} userRole={state.userRole} currentPhase={state.phase} />
     </div>
   );
 }

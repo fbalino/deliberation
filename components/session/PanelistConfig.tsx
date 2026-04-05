@@ -18,7 +18,6 @@ export function PanelistConfig({ panelists, onChange }: Props) {
   const [modelStatus, setModelStatus] = useState<Record<string, ModelStatus>>({});
   const [checking, setChecking] = useState(false);
 
-  // Check model health on mount
   useEffect(() => {
     checkModels();
   }, []);
@@ -62,20 +61,21 @@ export function PanelistConfig({ panelists, onChange }: Props) {
     if (checking && !status) {
       return (
         <span className="relative flex h-3 w-3 shrink-0" title="Checking...">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
-          <span className="relative inline-flex rounded-full h-3 w-3 bg-yellow-400" />
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-75" style={{ background: 'var(--warning)' }} />
+          <span className="relative inline-flex rounded-full h-3 w-3" style={{ background: 'var(--warning)' }} />
         </span>
       );
     }
 
     if (!status) {
-      return <span className="inline-flex rounded-full h-3 w-3 bg-gray-300 shrink-0" title="Not checked" />;
+      return <span className="inline-flex rounded-full h-3 w-3 shrink-0" style={{ background: 'var(--border-strong)' }} title="Not checked" />;
     }
 
     if (status.ok) {
       return (
         <span
-          className="inline-flex rounded-full h-3 w-3 bg-green-500 shrink-0"
+          className="inline-flex rounded-full h-3 w-3 shrink-0"
+          style={{ background: 'var(--success)' }}
           title={`Connected (${status.latencyMs}ms)`}
         />
       );
@@ -83,22 +83,31 @@ export function PanelistConfig({ panelists, onChange }: Props) {
 
     return (
       <span
-        className="inline-flex rounded-full h-3 w-3 bg-red-500 shrink-0 cursor-help"
+        className="inline-flex rounded-full h-3 w-3 shrink-0 cursor-help"
+        style={{ background: 'var(--danger)' }}
         title={status.error || 'Connection failed'}
       />
     );
   }
 
+  const selectStyle: React.CSSProperties = {
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border)',
+    background: 'var(--surface)',
+    color: 'var(--text)',
+  };
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium text-gray-700">Panelists ({panelists.length})</h3>
+          <h3 className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Panelists ({panelists.length})</h3>
           <button
             type="button"
             onClick={checkModels}
             disabled={checking}
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+            className="text-xs transition-colors disabled:opacity-50"
+            style={{ color: 'var(--text-tertiary)' }}
             title="Re-check model connections"
           >
             {checking ? 'checking...' : 'test connections'}
@@ -112,14 +121,22 @@ export function PanelistConfig({ panelists, onChange }: Props) {
       {panelists.map((panelist, index) => (
         <div
           key={index}
-          className="border border-gray-200 rounded-lg p-4 space-y-3"
+          className="p-4 space-y-3"
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+          }}
         >
           <div className="flex items-center gap-3">
             {/* Avatar color */}
             <button
               type="button"
-              className="w-8 h-8 rounded-full shrink-0 ring-2 ring-offset-1 ring-gray-200"
-              style={{ backgroundColor: panelist.avatar_color }}
+              className="w-8 h-8 rounded-full shrink-0 ring-2 ring-offset-1"
+              style={{
+                backgroundColor: panelist.avatar_color,
+                outline: '2px solid var(--border)',
+                outlineOffset: '2px',
+              }}
               onClick={() => {
                 const nextColor = AVATAR_COLORS[(AVATAR_COLORS.indexOf(panelist.avatar_color) + 1) % AVATAR_COLORS.length];
                 updatePanelist(index, { avatar_color: nextColor });
@@ -142,7 +159,8 @@ export function PanelistConfig({ panelists, onChange }: Props) {
             <select
               value={panelist.model_id}
               onChange={(e) => updatePanelist(index, { model_id: e.target.value })}
-              className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+              className="px-3 py-2 text-sm"
+              style={selectStyle}
             >
               {MODEL_REGISTRY.map((model) => (
                 <option key={model.id} value={model.id}>
@@ -166,7 +184,7 @@ export function PanelistConfig({ panelists, onChange }: Props) {
               size="sm"
               onClick={() => removePanelist(index)}
               disabled={panelists.length <= 2}
-              className="text-red-500 hover:text-red-700"
+              style={{ color: 'var(--danger)' }}
             >
               Remove
             </Button>
@@ -174,14 +192,14 @@ export function PanelistConfig({ panelists, onChange }: Props) {
 
           {/* Error message if connection failed */}
           {modelStatus[panelist.model_id] && !modelStatus[panelist.model_id].ok && (
-            <p className="text-xs text-red-500 pl-14">
+            <p className="text-xs pl-14" style={{ color: 'var(--danger)' }}>
               {modelStatus[panelist.model_id].error}
             </p>
           )}
 
           {/* Latency if connected */}
           {modelStatus[panelist.model_id]?.ok && (
-            <p className="text-xs text-green-600 pl-14">
+            <p className="text-xs pl-14" style={{ color: 'var(--success)' }}>
               Connected ({modelStatus[panelist.model_id].latencyMs}ms)
             </p>
           )}

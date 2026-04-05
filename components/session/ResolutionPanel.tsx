@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { DbResolution, DbPanelist, VoteData, VoteVerdict } from '@/lib/supabase/types';
@@ -13,10 +13,10 @@ interface Props {
   sessionId: string;
 }
 
-const VERDICT_STYLE: Record<string, string> = {
-  approve: 'bg-green-100 text-green-800 border-green-200',
-  approve_with_amendments: 'bg-amber-100 text-amber-800 border-amber-200',
-  reject: 'bg-red-100 text-red-800 border-red-200',
+const VERDICT_STYLE: Record<string, { bg: string; text: string; border: string }> = {
+  approve: { bg: 'var(--success-subtle)', text: 'var(--success-text)', border: 'var(--success)' },
+  approve_with_amendments: { bg: 'var(--warning-subtle)', text: 'var(--warning-text)', border: 'var(--warning)' },
+  reject: { bg: 'var(--danger-subtle)', text: 'var(--danger-text)', border: 'var(--danger)' },
 };
 
 export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Props) {
@@ -24,12 +24,41 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
 
   const [summaries, setSummaries] = useState<Map<string, string>>(new Map());
   const [loadingSummaries, setLoadingSummaries] = useState(true);
+  const [continuing, setContinuing] = useState(false);
+  const [continuationText, setContinuationText] = useState('');
+  const [resolutionContent, setResolutionContent] = useState(resolution?.content_markdown || '');
 
-  // Get raw analysis texts and vote results
+  useEffect(() => {
+    if (resolution?.content_markdown) setResolutionContent(resolution.content_markdown);
+  }, [resolution?.content_markdown]);
+
+  const handleContinueDraft = useCallback(() => {
+    setContinuing(true);
+    setContinuationText('');
+    const es = new EventSource(`/api/sessions/${sessionId}/continue-draft`);
+    es.onmessage = (e) => {
+      const event = JSON.parse(e.data);
+      if (event.type === 'contribution_chunk' && !event.isThinking) {
+        setContinuationText((prev) => prev + event.text);
+      }
+      if (event.type === 'session_complete' || (event.type === 'error' && event.fatal)) {
+        es.close();
+        setContinuing(false);
+        if (event.type === 'session_complete') {
+          setResolutionContent((prev) => prev + '\n' + continuationText);
+          window.location.reload();
+        }
+      }
+      if (event.type === 'intervention_prompt') {
+        // Could show this as a toast
+      }
+    };
+    es.onerror = () => { es.close(); setContinuing(false); };
+  }, [sessionId, continuationText]);
+
   const rawAnalyses = getRawAnalyses(rounds);
   const votes = getVotes(rounds, panelistMap);
 
-  // Fetch or load cached summaries
   useEffect(() => {
     async function fetchSummaries() {
       setLoadingSummaries(true);
@@ -66,9 +95,31 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
     URL.revokeObjectURL(url);
   }
 
+  function downloadPdf() {
+    const el = document.getElementById('resolution-prose');
+    if (!el) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html><head><title>Resolution</title>
+      <style>
+        body { font-family: Georgia, serif; max-width: 70ch; margin: 2em auto; padding: 0 1em; color: #1a1a1a; line-height: 1.7; }
+        h1 { font-size: 1.5em; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.5em; }
+        h2 { font-size: 1.25em; margin-top: 1.5em; }
+        h3 { font-size: 1.1em; }
+        code { background: #f3f4f6; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
+        pre { background: #1f2937; color: #f3f4f6; padding: 1em; border-radius: 6px; overflow-x: auto; }
+        blockquote { border-left: 3px solid #6366f1; padding-left: 1em; color: #4b5563; }
+        table { border-collapse: collapse; width: 100%; } th, td { border: 1px solid #e5e7eb; padding: 0.5em; text-align: left; }
+      </style></head><body>${el.innerHTML}</body></html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  }
+
   if (!resolution) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
+      <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-tertiary)' }}>
         <p>No resolution yet — the deliberation is still in progress.</p>
       </div>
     );
@@ -81,9 +132,19 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
         {panelists.filter((p) => !p.is_human).map((p) => {
           const summary = summaries.get(p.id);
           const vote = votes.get(p.id);
+          const vs = vote ? VERDICT_STYLE[vote.verdict] : null;
 
           return (
-            <div key={p.id} className="rounded-xl border border-gray-200 p-6 bg-white shadow-sm">
+            <div
+              key={p.id}
+              className="p-5"
+              style={{
+                borderRadius: 'var(--radius-xl)',
+                border: '1px solid var(--border)',
+                background: 'var(--surface)',
+                boxShadow: 'var(--shadow-sm)',
+              }}
+            >
               <div className="flex items-center gap-3 mb-3">
                 <div
                   className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shrink-0"
@@ -92,18 +153,21 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
                   {p.display_name.charAt(0)}
                 </div>
                 <div>
-                  <div className="text-base font-semibold text-gray-900">{p.display_name}</div>
-                  <div className="text-xs text-gray-400">{p.model_id}</div>
+                  <div className="text-base font-semibold" style={{ color: 'var(--text)' }}>{p.display_name}</div>
+                  <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{p.model_id}</div>
                 </div>
-                {vote && (
-                  <span className={`ml-auto text-xs font-semibold px-3 py-1 rounded-full border ${VERDICT_STYLE[vote.verdict] || 'bg-gray-100 text-gray-600'}`}>
+                {vote && vs && (
+                  <span
+                    className="ml-auto text-xs font-semibold px-3 py-1 rounded-full"
+                    style={{ background: vs.bg, color: vs.text, border: `1px solid ${vs.border}` }}
+                  >
                     {vote.verdict.replace(/_/g, ' ')}
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-600 leading-relaxed">
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 {loadingSummaries ? (
-                  <span className="text-gray-400 italic">Summarizing...</span>
+                  <span className="italic" style={{ color: 'var(--text-tertiary)' }}>Summarizing...</span>
                 ) : (
                   summary || 'No analysis recorded'
                 )}
@@ -127,35 +191,70 @@ export function ResolutionPanel({ resolution, panelists, rounds, sessionId }: Pr
                   {drafter.display_name.charAt(0)}
                 </div>
                 <div>
-                  <div className="text-sm text-gray-500">Authored by</div>
-                  <div className="text-sm font-semibold text-gray-900">{drafter.display_name}</div>
+                  <div className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Authored by</div>
+                  <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{drafter.display_name}</div>
                 </div>
               </div>
             ) : <div />}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleContinueDraft}
+                disabled={continuing}
+                className="btn-primary px-4 py-2 text-sm font-semibold disabled:opacity-50"
+              >
+                {continuing ? 'Completing...' : 'Complete Document'}
+              </button>
               <button
                 onClick={downloadMarkdown}
-                className="px-4 py-2 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+                className="px-4 py-2 text-sm font-semibold transition-colors"
+                style={{
+                  background: 'var(--sidebar-bg)',
+                  color: 'var(--sidebar-text)',
+                  borderRadius: 'var(--radius-md)',
+                }}
               >
                 Download .md
               </button>
+              <button
+                onClick={downloadPdf}
+                className="px-4 py-2 text-sm font-semibold transition-colors"
+                style={{
+                  background: 'var(--text-secondary)',
+                  color: 'var(--text-inverse)',
+                  borderRadius: 'var(--radius-md)',
+                }}
+              >
+                Download PDF
+              </button>
               <a
                 href={`/new?chain_from=${sessionId}`}
-                className="px-4 py-2 text-sm font-medium border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                className="btn-secondary px-4 py-2 text-sm font-semibold"
               >
-                Chain → New Session
+                Chain &rarr; New Session
               </a>
             </div>
           </div>
         );
       })()}
 
-      {/* Resolution document — optimal reading width ~70ch */}
-      <div className="rounded-xl border border-gray-200 bg-white p-8 md:py-16 md:px-12">
-        <div className="mx-auto prose prose-gray prose-headings:text-gray-900 prose-headings:font-bold prose-h1:text-2xl prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h3:text-lg prose-p:text-[15px] prose-p:leading-7 prose-p:text-gray-700 prose-li:text-[15px] prose-li:text-gray-700 prose-li:leading-7 prose-strong:text-gray-900 prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-indigo-400 prose-blockquote:bg-indigo-50/30 prose-blockquote:text-gray-600 prose-blockquote:py-1 prose-a:text-indigo-600 prose-hr:border-gray-200 prose-hr:my-8 prose-table:text-sm prose-th:text-left prose-th:text-gray-700 prose-th:bg-gray-50 prose-td:text-gray-600" style={{ maxWidth: '70ch' }}>
+      {/* Resolution document */}
+      <div
+        className="p-8 md:py-16 md:px-12"
+        style={{
+          borderRadius: 'var(--radius-xl)',
+          border: '1px solid var(--border)',
+          background: 'var(--surface)',
+        }}
+      >
+        <div
+          id="resolution-prose"
+          className="mx-auto prose prose-gray dark:prose-invert prose-headings:font-bold prose-h1:text-2xl prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h3:text-lg prose-p:text-[15px] prose-p:leading-7 prose-li:text-[15px] prose-li:leading-7 prose-code:text-sm prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:text-xs prose-a:text-[var(--accent)] prose-table:text-sm"
+          style={{ maxWidth: '70ch', color: 'var(--text-secondary)' }}
+        >
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {resolution.content_markdown}
+            {resolutionContent + (continuationText ? '\n' + continuationText : '')}
           </ReactMarkdown>
+          {continuing && <span className="inline-block w-2 h-5 rounded-sm animate-pulse" style={{ background: 'var(--accent)' }} />}
         </div>
       </div>
     </div>
@@ -185,7 +284,6 @@ function getVotes(rounds: RoundGroup[], panelistMap: Map<string, DbPanelist>): M
   if (!lastRound) return votes;
 
   for (const contrib of lastRound.contributions) {
-    // Try to parse vote from content
     const trimmed = contrib.content.trim();
     const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
     if (jsonMatch) {

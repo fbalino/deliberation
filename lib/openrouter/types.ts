@@ -28,6 +28,7 @@ export interface ModelDefinition {
   inputPricePerMTok: number;
   outputPricePerMTok: number;
   contextWindow: number;
+  maxOutputTokens: number;
   supportsVision: boolean;
   supportsReasoning: boolean;
 }

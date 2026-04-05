@@ -200,12 +200,29 @@ export async function runVotingPhase(
       return currentResolutionId;
     }
 
+    // Minority report mode: force-approve immediately with dissents
+    if (config.disagreement_handling === 'minority_report') {
+      let finalMarkdown = resolution.content_markdown;
+      if (dissents.length > 0) {
+        finalMarkdown += '\n\n---\n\n## Dissenting Opinions\n\n';
+        for (const d of dissents) {
+          finalMarkdown += `### ${d.name}\n${d.reasoning}\n\n`;
+        }
+      }
+      await supabaseServer
+        .from('resolutions')
+        .update({ content_markdown: finalMarkdown, status: 'approved' })
+        .eq('id', currentResolutionId);
+      emit({ type: 'intervention_prompt', message: 'Resolution approved with minority report (dissenting opinions appended)' });
+      return currentResolutionId;
+    }
+
     // Not approved — check if this is the last iteration
     if (iteration >= config.max_draft_iterations) {
-      // Force-approve with dissenting opinions
+      // Force-approve, append dissents only if disagreement_handling includes minority_report
       let finalMarkdown = resolution.content_markdown;
 
-      if (dissents.length > 0) {
+      if (config.disagreement_handling === 'both' && dissents.length > 0) {
         finalMarkdown += '\n\n---\n\n## Dissenting Opinions\n\n';
         for (const d of dissents) {
           finalMarkdown += `### ${d.name}\n${d.reasoning}\n\n`;
@@ -217,7 +234,7 @@ export async function runVotingPhase(
         .update({ content_markdown: finalMarkdown, status: 'approved' })
         .eq('id', currentResolutionId);
 
-      emit({ type: 'intervention_prompt', message: 'Maximum draft iterations reached — resolution approved with dissenting opinions' });
+      emit({ type: 'intervention_prompt', message: 'Maximum draft iterations reached — resolution force-approved' });
       return currentResolutionId;
     }
 

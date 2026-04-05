@@ -29,7 +29,7 @@ function buildBody(params: CallModelParams, stream: boolean) {
   if (stream) {
     body.stream_options = { include_usage: true };
   }
-  if (params.maxTokens) body.max_completion_tokens = params.maxTokens;
+  body.max_completion_tokens = params.maxTokens || (getModelById(params.modelId)?.maxOutputTokens ?? 128000);
 
   // Chat Completions API uses top-level "reasoning_effort" (not nested "reasoning")
   // temperature is NOT supported when reasoning_effort is anything other than "none"

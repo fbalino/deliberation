@@ -20,14 +20,13 @@ export function PhaseTransition({ phase, isTransitioning }: Props) {
 
   return (
     <div className="flex items-center justify-center gap-3 py-6">
-      {/* Spinner */}
       <div className="relative w-8 h-8">
-        <div className="absolute inset-0 rounded-full border-2 border-gray-200" />
-        <div className="absolute inset-0 rounded-full border-2 border-indigo-500 border-t-transparent animate-spin" />
+        <div className="absolute inset-0 rounded-full border-2" style={{ borderColor: 'var(--border)' }} />
+        <div className="absolute inset-0 rounded-full border-2 border-t-transparent animate-spin" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
       </div>
       <div>
-        <p className="text-sm font-medium text-gray-700">{message}</p>
-        <p className="text-xs text-gray-400 mt-0.5">This may take a moment</p>
+        <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>{message}</p>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>This may take a moment</p>
       </div>
     </div>
   );

@@ -22,14 +22,24 @@ export async function runAnalysisPhase(
 
   emit({ type: 'round_start', round: 1, phase: 'analysis' });
 
-  // Fan out parallel calls to all non-human panelists
   const aiPanelists = panelists.filter((p) => !p.is_human);
 
-  await Promise.all(
-    aiPanelists.map((panelist) =>
-      analyzeWithPanelist(panelist, session, round.id, sessionId, emit)
-    )
-  );
+  if (config.analysis_mode === 'open') {
+    // Open mode: sequential — each panelist sees previous analyses
+    let previousAnalyses = '';
+
+    for (const panelist of aiPanelists) {
+      const content = await analyzeWithPanelist(panelist, session, round.id, sessionId, emit, previousAnalyses || undefined);
+      previousAnalyses += `[${panelist.display_name}]:\n${content}\n\n---\n\n`;
+    }
+  } else {
+    // Blind mode: parallel — panelists don't see each other
+    await Promise.all(
+      aiPanelists.map((panelist) =>
+        analyzeWithPanelist(panelist, session, round.id, sessionId, emit)
+      )
+    );
+  }
 }
 
 async function analyzeWithPanelist(
@@ -37,13 +47,15 @@ async function analyzeWithPanelist(
   session: DbSession,
   roundId: string,
   sessionId: string,
-  emit: (event: SSEEvent) => void
-): Promise<void> {
+  emit: (event: SSEEvent) => void,
+  previousAnalyses?: string
+): Promise<string> {
   emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
   const { system, user } = analysisPrompt({
     briefing: session.briefing_text || '',
     panelistSystemPrompt: panelist.system_prompt || undefined,
+    previousAnalyses,
   });
 
   let content = '';
@@ -100,4 +112,6 @@ async function analyzeWithPanelist(
     modelId: panelist.model_id,
     usage,
   });
+
+  return content;
 }

@@ -23,7 +23,7 @@ export function PhaseIndicator({ currentPhase, activeTab, onTabClick }: Props) {
   const adjustedIndex = currentPhase === 'drafter_election' ? 2 : currentIndex;
 
   return (
-    <div className="flex items-center gap-0.5 bg-gray-100 rounded-lg p-1">
+    <div className="flex items-center gap-0.5 p-1 rounded-xl" style={{ background: 'var(--surface-inset)' }}>
       {PHASES.map((phase, index) => {
         const isTerminal = currentPhase === 'completed' || currentPhase === 'abandoned';
         const isCompleted = adjustedIndex > index || isTerminal;
@@ -37,22 +37,32 @@ export function PhaseIndicator({ currentPhase, activeTab, onTabClick }: Props) {
             type="button"
             disabled={!isClickable && !onTabClick}
             onClick={() => onTabClick?.(phase.key)}
-            className={`relative flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-              isSelected
-                ? 'bg-white shadow-sm text-gray-900'
+            className="relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-all duration-150"
+            style={{
+              borderRadius: 'var(--radius-md)',
+              background: isSelected ? 'var(--surface)' : 'transparent',
+              boxShadow: isSelected ? 'var(--shadow-sm)' : 'none',
+              color: isSelected
+                ? 'var(--text)'
                 : isActive
-                ? 'bg-indigo-50 text-indigo-700'
+                ? 'var(--accent)'
                 : isCompleted
-                ? 'text-gray-600 hover:bg-white/60 cursor-pointer'
-                : 'text-gray-400 cursor-default'
-            }`}
+                ? 'var(--text-secondary)'
+                : 'var(--text-tertiary)',
+              cursor: isClickable || onTabClick ? 'pointer' : 'default',
+            }}
           >
             {/* Status dot */}
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-              isCompleted && !isActive ? 'bg-green-500' :
-              isActive ? 'bg-indigo-500 animate-pulse' :
-              'bg-gray-300'
-            }`} />
+            <span
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'animate-pulse' : ''}`}
+              style={{
+                background: isCompleted && !isActive
+                  ? 'var(--success)'
+                  : isActive
+                  ? 'var(--accent)'
+                  : 'var(--border-strong)',
+              }}
+            />
             {phase.label}
           </button>
         );

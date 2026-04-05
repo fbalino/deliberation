@@ -33,13 +33,13 @@ export function VoteSummary({ votes }: Props) {
     <div className="space-y-4">
       {/* Tally */}
       <div className="flex items-center gap-3">
-        <span className="text-sm font-medium text-gray-700">
+        <span className="text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>
           {approvals} of {votes.length} approved
         </span>
-        <div className="flex-1 h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="flex-1 h-2 rounded-full overflow-hidden" style={{ background: 'var(--surface-inset)' }}>
           <div
-            className="h-full bg-green-500 rounded-full transition-all"
-            style={{ width: `${(approvals / votes.length) * 100}%` }}
+            className="h-full rounded-full transition-all"
+            style={{ width: `${(approvals / votes.length) * 100}%`, background: 'var(--success)' }}
           />
         </div>
       </div>
@@ -49,7 +49,14 @@ export function VoteSummary({ votes }: Props) {
         {votes.map((vote) => {
           const config = VERDICT_CONFIG[vote.verdict];
           return (
-            <div key={vote.panelistId} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
+            <div
+              key={vote.panelistId}
+              className="flex items-start gap-3 p-3"
+              style={{
+                background: 'var(--surface-inset)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
               <div
                 className="w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
                 style={{ backgroundColor: vote.panelistColor }}
@@ -58,12 +65,12 @@ export function VoteSummary({ votes }: Props) {
               </div>
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-medium">{vote.panelistName}</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{vote.panelistName}</span>
                   <Badge variant={config.variant}>{config.label}</Badge>
                 </div>
-                <p className="text-sm text-gray-600">{vote.reasoning}</p>
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{vote.reasoning}</p>
                 {vote.amendments && (
-                  <p className="text-sm text-amber-700 mt-1">
+                  <p className="text-sm mt-1" style={{ color: 'var(--warning-text)' }}>
                     Amendments: {vote.amendments}
                   </p>
                 )}

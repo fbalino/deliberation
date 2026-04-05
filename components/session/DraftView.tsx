@@ -18,14 +18,13 @@ export function DraftView({ rounds, panelists, electedDrafterId }: Props) {
 
   const drafter = electedDrafterId ? panelists.find((p) => p.id === electedDrafterId) : null;
 
-  // Find the drafter's contribution
   const draftContrib = lastDraft?.contributions.find((c) =>
     drafter ? c.panelistId === drafter.id : true
   );
 
   if (!draftContrib && !lastDraft) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
+      <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-tertiary)' }}>
         No draft produced yet.
       </div>
     );
@@ -37,7 +36,14 @@ export function DraftView({ rounds, panelists, electedDrafterId }: Props) {
     <div className="flex-1 overflow-y-auto">
       {/* Drafter banner */}
       {drafter && (
-        <div className="flex items-center gap-3 mb-4 px-4 py-3 bg-purple-50 border border-purple-200 rounded-lg">
+        <div
+          className="flex items-center gap-3 mb-4 px-4 py-3"
+          style={{
+            background: 'var(--purple-subtle)',
+            border: '1px solid var(--purple)',
+            borderRadius: 'var(--radius-lg)',
+          }}
+        >
           <div
             className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
             style={{ backgroundColor: drafter.avatar_color || '#6366f1' }}
@@ -45,10 +51,10 @@ export function DraftView({ rounds, panelists, electedDrafterId }: Props) {
             {drafter.display_name.charAt(0)}
           </div>
           <div>
-            <span className="text-sm font-semibold text-purple-900">{drafter.display_name}</span>
-            <span className="text-sm text-purple-600 ml-1.5">is drafting the resolution</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--purple-text)' }}>{drafter.display_name}</span>
+            <span className="text-sm ml-1.5" style={{ color: 'var(--purple)' }}>is drafting the resolution</span>
             {isStreaming && (
-              <span className="ml-2 inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+              <span className="ml-2 inline-block w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--success)' }} />
             )}
           </div>
         </div>
@@ -62,16 +68,16 @@ export function DraftView({ rounds, panelists, electedDrafterId }: Props) {
       )}
 
       {/* Draft document */}
-      <div className="rounded-xl border border-gray-200 bg-white p-8 md:py-12 md:px-12">
-        <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-4">
+      <div className="p-8 md:py-12 md:px-12" style={{ borderRadius: 'var(--radius-xl)', border: '1px solid var(--border)', background: 'var(--surface)' }}>
+        <div className="text-[10px] font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-tertiary)' }}>
           Draft v{draftingRounds.length}
         </div>
-        <div className="mx-auto prose prose-gray prose-headings:text-gray-900 prose-headings:font-bold prose-h1:text-2xl prose-h1:border-b prose-h1:border-gray-200 prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h3:text-lg prose-p:text-[15px] prose-p:leading-7 prose-p:text-gray-700 prose-li:text-[15px] prose-li:text-gray-700 prose-li:leading-7 prose-strong:text-gray-900 prose-code:text-sm prose-code:bg-gray-100 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-blockquote:border-indigo-400 prose-blockquote:bg-indigo-50/30 prose-blockquote:text-gray-600 prose-blockquote:py-1 prose-a:text-indigo-600 prose-hr:border-gray-200 prose-hr:my-8" style={{ maxWidth: '70ch' }}>
+        <div className="mx-auto prose prose-gray dark:prose-invert prose-headings:font-bold prose-h1:text-2xl prose-h1:pb-3 prose-h1:mb-6 prose-h2:text-xl prose-h2:mt-8 prose-h3:text-lg prose-p:text-[15px] prose-p:leading-7 prose-li:text-[15px] prose-li:leading-7 prose-code:text-sm prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:text-xs prose-a:text-[var(--accent)]" style={{ maxWidth: '70ch', color: 'var(--text-secondary)' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {draftContrib?.content || ''}
           </ReactMarkdown>
           {isStreaming && (
-            <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm" />
+            <span className="inline-block w-1.5 h-4 rounded-sm animate-pulse" style={{ background: 'var(--accent)' }} />
           )}
         </div>
       </div>

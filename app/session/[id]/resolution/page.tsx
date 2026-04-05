@@ -23,8 +23,8 @@ export default function ResolutionPage({ params }: { params: Promise<{ id: strin
     load();
   }, [sessionId]);
 
-  if (loading) return <div className="text-center py-12 text-gray-400">Loading...</div>;
-  if (!session) return <div className="text-center py-12 text-red-500">Session not found</div>;
+  if (loading) return <div className="text-center py-12" style={{ color: 'var(--text-tertiary)' }}>Loading...</div>;
+  if (!session) return <div className="text-center py-12" style={{ color: 'var(--danger)' }}>Session not found</div>;
 
   const resolution = session.resolutions?.find((r) => r.status === 'approved');
   const panelists = new Map<string, DbPanelist>(session.panelists.map((p) => [p.id, p]));
@@ -63,11 +63,11 @@ export default function ResolutionPage({ params }: { params: Promise<{ id: strin
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <Link href={`/session/${sessionId}`} className="text-sm text-indigo-600 hover:underline mb-1 block">
-            ← Back to session
+          <Link href={`/session/${sessionId}`} className="text-sm hover:underline mb-1 block" style={{ color: 'var(--accent)' }}>
+            &larr; Back to session
           </Link>
-          <h2 className="text-2xl font-bold">{session.title || 'Resolution'}</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h2 className="dl-serif text-2xl" style={{ color: 'var(--text)' }}>{session.title || 'Resolution'}</h2>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
             Version {resolution?.version || 1} &middot; ${(session.total_cost_cents / 100).toFixed(2)} total cost
           </p>
         </div>
@@ -76,7 +76,7 @@ export default function ResolutionPage({ params }: { params: Promise<{ id: strin
             Download .md
           </Button>
           <Link href={`/new?chain_from=${sessionId}`}>
-            <Button variant="secondary">Chain → New Session</Button>
+            <Button variant="secondary">Chain &rarr; New Session</Button>
           </Link>
         </div>
       </div>
@@ -84,7 +84,7 @@ export default function ResolutionPage({ params }: { params: Promise<{ id: strin
       {/* Vote Summary */}
       {votes.length > 0 && (
         <Card className="mb-6">
-          <h3 className="text-sm font-medium text-gray-700 mb-3">Vote Summary</h3>
+          <h3 className="text-sm font-medium mb-3" style={{ color: 'var(--text-secondary)' }}>Vote Summary</h3>
           <VoteSummary votes={votes} />
         </Card>
       )}
@@ -92,13 +92,13 @@ export default function ResolutionPage({ params }: { params: Promise<{ id: strin
       {/* Resolution Content */}
       <Card>
         {resolution ? (
-          <div className="prose prose-sm max-w-none">
+          <div className="prose prose-sm dark:prose-invert max-w-none" style={{ color: 'var(--text-secondary)' }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>
               {resolution.content_markdown}
             </ReactMarkdown>
           </div>
         ) : (
-          <p className="text-gray-500">No approved resolution found for this session.</p>
+          <p style={{ color: 'var(--text-tertiary)' }}>No approved resolution found for this session.</p>
         )}
       </Card>
     </div>

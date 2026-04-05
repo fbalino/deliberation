@@ -27,7 +27,7 @@ function buildBody(params: CallModelParams) {
   }
 
   const config: Record<string, unknown> = {};
-  if (params.maxTokens) config.maxOutputTokens = params.maxTokens;
+  config.maxOutputTokens = params.maxTokens || (getModelById(params.modelId)?.maxOutputTokens ?? 65536);
   if (params.temperature !== undefined) config.temperature = params.temperature;
   // Always enable thinking at HIGH level
   config.thinkingConfig = { thinking_level: 'HIGH' };

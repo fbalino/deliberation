@@ -7,10 +7,13 @@ interface Props {
   sessionId: string;
   isPaused: boolean;
   isActive: boolean;
+  userRole?: 'observer' | 'participant';
+  currentPhase?: string;
 }
 
-export function InterventionBar({ sessionId, isPaused, isActive }: Props) {
+export function InterventionBar({ sessionId, isPaused, isActive, userRole, currentPhase }: Props) {
   const [nudgeText, setNudgeText] = useState('');
+  const [injectText, setInjectText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   if (!isActive) return null;
@@ -40,7 +43,7 @@ export function InterventionBar({ sessionId, isPaused, isActive }: Props) {
   }
 
   return (
-    <div className="border-t border-gray-200 bg-white px-4 py-3">
+    <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
       <div className="flex items-center gap-3">
         {/* Pause/Resume */}
         <Button
@@ -60,7 +63,13 @@ export function InterventionBar({ sessionId, isPaused, isActive }: Props) {
             onChange={(e) => setNudgeText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleNudge()}
             placeholder="Send a directive to panelists..."
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-1.5 text-sm"
+            className="flex-1 px-3 py-1.5 text-sm transition-colors duration-150"
+            style={{
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text)',
+            }}
           />
           <Button variant="secondary" size="sm" onClick={handleNudge} disabled={!nudgeText.trim()}>
             Nudge
@@ -72,6 +81,37 @@ export function InterventionBar({ sessionId, isPaused, isActive }: Props) {
           Force Advance
         </Button>
       </div>
+
+      {/* Inject as Chair (participant mode, discussion phase only) */}
+      {userRole === 'participant' && currentPhase === 'discussing' && (
+        <div className="flex gap-2 mt-2">
+          <textarea
+            value={injectText}
+            onChange={(e) => setInjectText(e.target.value)}
+            placeholder="Enter your contribution as Chair..."
+            rows={2}
+            className="flex-1 px-3 py-1.5 text-sm resize-none transition-colors duration-150"
+            style={{
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border)',
+              background: 'var(--surface)',
+              color: 'var(--text)',
+            }}
+          />
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={async () => {
+              if (!injectText.trim()) return;
+              await sendIntervention('inject', injectText);
+              setInjectText('');
+            }}
+            disabled={!injectText.trim()}
+          >
+            Submit as Chair
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 export function analysisPrompt(params: {
   briefing: string;
   panelistSystemPrompt?: string;
+  previousAnalyses?: string;
 }): { system: string; user: string } {
   const system = params.panelistSystemPrompt ||
     `You are an independent analyst participating in a structured deliberation.
@@ -9,7 +10,11 @@ Identify key issues, risks, opportunities, and recommendations.
 Be specific and evidence-based. You will later discuss your findings
 with other analysts and must be prepared to defend your positions.`;
 
-  const user = `Here is the briefing material for your analysis:\n\n${params.briefing}`;
+  let user = `Here is the briefing material for your analysis:\n\n${params.briefing}`;
+
+  if (params.previousAnalyses) {
+    user += `\n\nThe following panelists have already submitted their analyses:\n${params.previousAnalyses}\n\nYou may reference, build on, or challenge their work.`;
+  }
 
   return { system, user };
 }

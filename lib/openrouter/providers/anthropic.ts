@@ -20,7 +20,7 @@ function buildBody(params: CallModelParams, stream: boolean) {
   const body: Record<string, unknown> = {
     model: params.modelId,
     messages,
-    max_tokens: params.maxTokens || 16384,
+    max_tokens: params.maxTokens || (getModelById(params.modelId)?.maxOutputTokens ?? 128000),
     stream,
   };
 

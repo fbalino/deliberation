@@ -59,7 +59,6 @@ const PHASE_SHORT: Record<string, string> = {
 function JsonCard({ content }: { content: string }) {
   const trimmed = content.trim();
 
-  // Try to extract JSON from the content
   let json: Record<string, unknown> | null = null;
   const jsonMatch = trimmed.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
@@ -72,35 +71,36 @@ function JsonCard({ content }: { content: string }) {
 
   const entries = Object.entries(json).filter(([, v]) => v !== null && v !== undefined);
 
-  // Label styling based on known fields
-  const labelStyle: Record<string, string> = {
-    verdict: 'text-indigo-700 bg-indigo-50',
-    pick: 'text-indigo-700 bg-indigo-50',
-    reason: 'text-gray-600 bg-gray-50',
-    reasoning: 'text-gray-600 bg-gray-50',
-    amendments: 'text-amber-700 bg-amber-50',
-  };
-
-  const verdictBadge: Record<string, string> = {
-    approve: 'bg-green-100 text-green-800 border-green-200',
-    approve_with_amendments: 'bg-amber-100 text-amber-800 border-amber-200',
-    reject: 'bg-red-100 text-red-800 border-red-200',
+  const verdictBadge: Record<string, { bg: string; text: string; border: string }> = {
+    approve: { bg: 'var(--success-subtle)', text: 'var(--success-text)', border: 'var(--success)' },
+    approve_with_amendments: { bg: 'var(--warning-subtle)', text: 'var(--warning-text)', border: 'var(--warning)' },
+    reject: { bg: 'var(--danger-subtle)', text: 'var(--danger-text)', border: 'var(--danger)' },
   };
 
   return (
-    <div className="rounded-lg border border-gray-200 overflow-hidden text-sm">
+    <div className="overflow-hidden text-sm" style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
       {entries.map(([key, value]) => {
         const strValue = String(value);
         const isVerdict = key === 'verdict' && verdictBadge[strValue];
 
         return (
-          <div key={key} className="flex border-b border-gray-100 last:border-b-0">
-            <div className={`px-3 py-2 font-medium text-xs uppercase tracking-wide w-24 shrink-0 ${labelStyle[key] || 'text-gray-500 bg-gray-50'}`}>
+          <div key={key} className="flex" style={{ borderBottom: '1px solid var(--border)' }}>
+            <div
+              className="px-3 py-2 font-semibold text-[10px] uppercase tracking-wider w-24 shrink-0"
+              style={{ background: 'var(--surface-inset)', color: 'var(--text-tertiary)' }}
+            >
               {key}
             </div>
-            <div className="px-3 py-2 flex-1 text-gray-700 text-[13px] leading-relaxed">
+            <div className="px-3 py-2 flex-1 text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
               {isVerdict ? (
-                <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold border ${verdictBadge[strValue]}`}>
+                <span
+                  className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                  style={{
+                    background: verdictBadge[strValue].bg,
+                    color: verdictBadge[strValue].text,
+                    border: `1px solid ${verdictBadge[strValue].border}`,
+                  }}
+                >
                   {strValue.replace(/_/g, ' ')}
                 </span>
               ) : (
@@ -125,16 +125,16 @@ function ContentRenderer({ content, isStreaming }: { content: string; isStreamin
       return (
         <div>
           {jsonCard}
-          {isStreaming && <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm mt-1" />}
+          {isStreaming && <span className="inline-block w-1.5 h-4 rounded-sm mt-1 animate-pulse" style={{ background: 'var(--accent)' }} />}
         </div>
       );
     }
   }
 
   return (
-    <div className="prose prose-sm prose-gray max-w-none prose-headings:text-gray-800 prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-p:text-gray-700 prose-li:text-[13px] prose-li:text-gray-700 prose-strong:text-gray-800 prose-code:text-xs prose-code:bg-gray-100 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:bg-gray-900 prose-pre:text-gray-100 prose-pre:text-xs prose-blockquote:border-indigo-300 prose-blockquote:text-gray-600 prose-a:text-indigo-600 prose-hr:border-gray-200">
+    <div className="prose prose-sm prose-gray dark:prose-invert max-w-none prose-headings:font-semibold prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-p:text-[13px] prose-p:leading-relaxed prose-li:text-[13px] prose-code:text-xs prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none prose-pre:text-xs prose-a:text-[var(--accent)]" style={{ color: 'var(--text-secondary)' }}>
       <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || ''}</ReactMarkdown>
-      {isStreaming && <span className="inline-block w-1.5 h-4 bg-indigo-400 animate-pulse rounded-sm" />}
+      {isStreaming && <span className="inline-block w-1.5 h-4 rounded-sm animate-pulse" style={{ background: 'var(--accent)' }} />}
     </div>
   );
 }
@@ -164,7 +164,6 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
       entries: [],
     };
 
-    // Strict phase filtering — only show rounds that match the filter
     const visibleRounds = filterPhases && filterPhases.length > 0
       ? rounds.filter((r) => filterPhases.includes(r.phase))
       : rounds;
@@ -172,8 +171,6 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
     for (const round of visibleRounds) {
       const contrib = round.contributions.find((c) => c.panelistId === pid);
       if (contrib && (contrib.content || contrib.thinkingContent || contrib.isStreaming)) {
-        // For drafting phase, replace the full resolution with a short note
-        // (the full draft is shown in the Resolution tab)
         const isDraftContent = round.phase === 'drafting' && contrib.content.length > 500;
         col.entries.push({
           phase: round.phase,
@@ -193,7 +190,7 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
 
   if (columns.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center text-gray-400">
+      <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--text-tertiary)' }}>
         Waiting for deliberation to begin...
       </div>
     );
@@ -206,7 +203,14 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
     <div className="flex-1 flex flex-col min-h-0">
       {/* Drafter banner */}
       {showDrafterBanner && (
-        <div className="flex items-center gap-3 mb-3 px-4 py-3 bg-purple-50 border border-purple-200 rounded-lg shrink-0">
+        <div
+          className="flex items-center gap-3 mb-3 px-4 py-3 shrink-0"
+          style={{
+            background: 'var(--purple-subtle)',
+            border: '1px solid var(--purple)',
+            borderRadius: 'var(--radius-lg)',
+          }}
+        >
           <div
             className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
             style={{ backgroundColor: electedDrafter.color }}
@@ -214,8 +218,8 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
             {electedDrafter.name.charAt(0)}
           </div>
           <div>
-            <span className="text-sm font-semibold text-purple-900">{electedDrafter.name}</span>
-            <span className="text-sm text-purple-600 ml-1.5">was elected to draft the resolution</span>
+            <span className="text-sm font-semibold" style={{ color: 'var(--purple-text)' }}>{electedDrafter.name}</span>
+            <span className="text-sm ml-1.5" style={{ color: 'var(--purple)' }}>was elected to draft the resolution</span>
           </div>
         </div>
       )}
@@ -224,10 +228,18 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
       {columns.map((col) => (
         <div
           key={col.panelistId}
-          className="flex flex-col border border-gray-200 rounded-lg overflow-hidden min-h-0"
+          className="flex flex-col overflow-hidden min-h-0"
+          style={{
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius-lg)',
+            borderTop: `3px solid ${col.panelistColor}`,
+          }}
         >
           {/* Column header */}
-          <div className="flex items-center gap-2 px-3 py-2.5 border-b border-gray-200 bg-gray-50 shrink-0">
+          <div
+            className="flex items-center gap-2 px-3 py-2.5 shrink-0"
+            style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-inset)' }}
+          >
             <div
               className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
               style={{ backgroundColor: col.panelistColor }}
@@ -235,11 +247,11 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
               {col.panelistName.charAt(0)}
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-gray-900 truncate">{col.panelistName}</div>
-              <div className="text-[10px] text-gray-400 truncate">{col.modelId}</div>
+              <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{col.panelistName}</div>
+              <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{col.modelId}</div>
             </div>
             {col.entries.some((e) => e.isStreaming) && (
-              <span className="ml-auto inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse shrink-0" />
+              <span className="ml-auto inline-block w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: 'var(--success)' }} />
             )}
           </div>
 
@@ -254,9 +266,9 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
             className="flex-1 overflow-y-auto px-3 py-2 space-y-3"
           >
             {col.entries.map((entry, i) => (
-              <div key={`${entry.phase}-${entry.roundNumber}`}>
+              <div key={`${col.panelistId}-${entry.phase}-${entry.roundNumber}`}>
                 {/* Phase/round label */}
-                <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">
+                <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-tertiary)' }}>
                   {PHASE_SHORT[entry.phase] || entry.phase}
                   {entry.phase === 'discussion' ? ` R${entry.roundNumber}` : ''}
                 </div>
@@ -266,16 +278,16 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
                   <ThinkingBlock content={entry.thinkingContent} isStreaming={entry.isThinkingStreaming} />
                 )}
 
-                {/* Content — JSON gets pretty cards, everything else gets markdown */}
+                {/* Content */}
                 <ContentRenderer content={entry.content} isStreaming={entry.isStreaming} />
 
                 {/* Divider between entries */}
-                {i < col.entries.length - 1 && <div className="border-t border-gray-100 mt-3" />}
+                {i < col.entries.length - 1 && <div className="mt-3" style={{ borderTop: '1px solid var(--border)' }} />}
               </div>
             ))}
 
             {col.entries.length === 0 && (
-              <div className="text-xs text-gray-300 italic pt-4 text-center">
+              <div className="text-xs italic pt-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
                 {hasContent ? 'No content in this phase' : 'Waiting...'}
               </div>
             )}

@@ -38,14 +38,17 @@ export function ContributionCard({
       <div className="flex-1 min-w-0">
         {/* Header */}
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-sm font-semibold text-gray-900">{panelistName}</span>
+          <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>{panelistName}</span>
           {modelId && (
-            <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">
+            <span
+              className="text-[11px] px-1.5 py-0.5 rounded font-medium"
+              style={{ background: 'var(--surface-inset)', color: 'var(--text-tertiary)' }}
+            >
               {modelId.split('/').pop()}
             </span>
           )}
           {isStreaming && (
-            <span className="inline-block w-2 h-4 bg-indigo-500 animate-pulse rounded-sm" />
+            <span className="inline-block w-2 h-4 rounded-sm animate-pulse" style={{ background: 'var(--accent)' }} />
           )}
         </div>
 
@@ -55,7 +58,7 @@ export function ContributionCard({
         )}
 
         {/* Content */}
-        <div className="prose prose-sm max-w-none text-gray-700">
+        <div className="prose prose-sm dark:prose-invert max-w-none" style={{ color: 'var(--text-secondary)' }}>
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{content || ''}</ReactMarkdown>
         </div>
       </div>
