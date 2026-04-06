@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { DbResolution, DbPanelist, VoteData, VoteVerdict } from '@/lib/supabase/types';
+import type { DbResolution, DbPanelist, VoteData, VoteVerdict } from '@/lib/db/types';
 import type { RoundGroup } from './ContributionFeed';
 
 interface Props {

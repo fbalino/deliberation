@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import { transaction } from '@/lib/db/client';
+import {
+  createSession,
+  insertPanelist,
+  listSessions,
+  updateSessionConfig,
+  getPanelistBySortOrder,
+} from '@/lib/db/queries';
 import { fetchUrlContent } from '@/lib/files/url-fetcher';
-import type { CreateSessionRequest } from '@/lib/supabase/types';
+import type { CreateSessionRequest } from '@/lib/db/types';
 
 // POST: Create a new session
 export async function POST(request: NextRequest) {
@@ -36,68 +43,54 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Insert session
-    const { data: session, error: sessionError } = await supabaseServer
-      .from('sessions')
-      .insert({
-        title: body.title,
-        status: 'configuring',
-        config: body.config,
-        briefing_text: augmentedBriefing,
-        briefing_urls: body.briefing_urls || [],
-        tags: body.tags || [],
-      })
-      .select()
-      .single();
-
-    if (sessionError || !session) {
-      return NextResponse.json(
-        { error: `Failed to create session: ${sessionError?.message}` },
-        { status: 500 }
-      );
-    }
-
-    // Insert panelists
-    const { error: panelistError } = await supabaseServer
-      .from('panelists')
-      .insert(
-        body.panelists.map((p, i) => ({
-          session_id: session.id,
-          display_name: p.display_name,
-          model_id: p.model_id,
-          system_prompt: p.system_prompt || null,
-          avatar_color: p.avatar_color,
-          is_human: p.is_human,
-          sort_order: p.sort_order ?? i,
-        }))
+    const session = await transaction(async (tx) => {
+      // Insert session
+      const sess = await createSession(
+        {
+          title: body.title,
+          status: 'configuring',
+          config: body.config,
+          briefing_text: augmentedBriefing,
+          briefing_urls: body.briefing_urls || [],
+          tags: body.tags || [],
+        },
+        tx
       );
 
-    if (panelistError) {
-      return NextResponse.json(
-        { error: `Failed to create panelists: ${panelistError.message}` },
-        { status: 500 }
-      );
-    }
+      // Insert panelists
+      for (let i = 0; i < body.panelists.length; i++) {
+        const p = body.panelists[i];
+        await insertPanelist(
+          {
+            session_id: sess.id,
+            display_name: p.display_name,
+            model_id: p.model_id,
+            system_prompt: p.system_prompt || null,
+            avatar_color: p.avatar_color,
+            is_human: p.is_human,
+            sort_order: p.sort_order ?? i,
+          },
+          tx
+        );
+      }
 
-    // Resolve pre-assigned drafter sort_order to real UUID
-    if (body.config.pre_assigned_drafter_id) {
-      const sortOrder = parseInt(body.config.pre_assigned_drafter_id);
-      if (!isNaN(sortOrder)) {
-        const { data: drafterPanelist } = await supabaseServer
-          .from('panelists')
-          .select('id')
-          .eq('session_id', session.id)
-          .eq('sort_order', sortOrder)
-          .single();
-
-        if (drafterPanelist) {
-          await supabaseServer
-            .from('sessions')
-            .update({ config: { ...body.config, pre_assigned_drafter_id: drafterPanelist.id } })
-            .eq('id', session.id);
+      // Resolve pre-assigned drafter sort_order to real UUID
+      if (body.config.pre_assigned_drafter_id) {
+        const sortOrder = parseInt(body.config.pre_assigned_drafter_id);
+        if (!isNaN(sortOrder)) {
+          const drafterPanelist = await getPanelistBySortOrder(sess.id, sortOrder, tx);
+          if (drafterPanelist) {
+            await updateSessionConfig(
+              sess.id,
+              { ...body.config, pre_assigned_drafter_id: drafterPanelist.id },
+              tx
+            );
+          }
         }
       }
-    }
+
+      return sess;
+    });
 
     return NextResponse.json({ id: session.id });
   } catch (error) {
@@ -112,29 +105,12 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const url = new URL(request.url);
-    const status = url.searchParams.get('status');
-    const search = url.searchParams.get('search');
+    const status = url.searchParams.get('status') || undefined;
+    const search = url.searchParams.get('search') || undefined;
 
-    let query = supabaseServer
-      .from('sessions')
-      .select('*, panelists(count)')
-      .order('created_at', { ascending: false });
+    const data = await listSessions({ status, search });
 
-    if (status && status !== 'all') {
-      query = query.eq('status', status);
-    }
-
-    if (search) {
-      query = query.or(`title.ilike.%${search}%,briefing_text.ilike.%${search}%`);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json(data || []);
+    return NextResponse.json(data);
   } catch (error) {
     return NextResponse.json(
       { error: `Server error: ${error instanceof Error ? error.message : 'unknown'}` },

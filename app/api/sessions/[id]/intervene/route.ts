@@ -1,6 +1,16 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
-import type { InterventionRequest, InterventionType } from '@/lib/supabase/types';
+import { transaction } from '@/lib/db/client';
+import {
+  getSession,
+  insertIntervention,
+  findHumanPanelist,
+  insertPanelist,
+  getLatestRound,
+  insertContribution,
+  getLatestDraftResolution,
+  markResolutionApproved,
+} from '@/lib/db/queries';
+import type { InterventionRequest, InterventionType } from '@/lib/db/types';
 
 const VALID_TYPES: InterventionType[] = [
   'pause', 'resume', 'nudge', 'inject', 'force_advance', 'force_approve',
@@ -22,11 +32,7 @@ export async function POST(
     }
 
     // Verify session exists and is in progress
-    const { data: session } = await supabaseServer
-      .from('sessions')
-      .select('status')
-      .eq('id', sessionId)
-      .single();
+    const session = await getSession(sessionId);
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
@@ -40,7 +46,7 @@ export async function POST(
     }
 
     // Insert intervention
-    await supabaseServer.from('interventions').insert({
+    await insertIntervention({
       session_id: sessionId,
       type: body.type,
       content: body.content || null,
@@ -48,66 +54,45 @@ export async function POST(
 
     // For inject (participant mode), create Chair contribution in the current round
     if (body.type === 'inject' && body.content) {
-      // Find or create the human Chair panelist
-      let { data: chairPanelist } = await supabaseServer
-        .from('panelists')
-        .select('id')
-        .eq('session_id', sessionId)
-        .eq('is_human', true)
-        .single();
+      await transaction(async (tx) => {
+        // Find or create the human Chair panelist
+        let chairPanelist = await findHumanPanelist(sessionId, tx);
 
-      if (!chairPanelist) {
-        const { data: newChair } = await supabaseServer
-          .from('panelists')
-          .insert({
-            session_id: sessionId,
-            display_name: 'Chair',
-            model_id: 'human',
-            is_human: true,
-            sort_order: 999,
-            avatar_color: '#1e293b',
-          })
-          .select()
-          .single();
-        chairPanelist = newChair;
-      }
+        if (!chairPanelist) {
+          chairPanelist = await insertPanelist(
+            {
+              session_id: sessionId,
+              display_name: 'Chair',
+              model_id: 'human',
+              is_human: true,
+              sort_order: 999,
+              avatar_color: '#1e293b',
+            },
+            tx
+          );
+        }
 
-      if (chairPanelist) {
         // Find the latest discussion round
-        const { data: latestRound } = await supabaseServer
-          .from('rounds')
-          .select('id')
-          .eq('session_id', sessionId)
-          .eq('phase', 'discussion')
-          .order('round_number', { ascending: false })
-          .limit(1)
-          .single();
+        const latestRound = await getLatestRound(sessionId, 'discussion', tx);
 
         if (latestRound) {
-          await supabaseServer.from('contributions').insert({
-            round_id: latestRound.id,
-            panelist_id: chairPanelist.id,
-            content: body.content,
-          });
+          await insertContribution(
+            {
+              round_id: latestRound.id,
+              panelist_id: chairPanelist.id,
+              content: body.content!,
+            },
+            tx
+          );
         }
-      }
+      });
     }
 
     // For force_approve, also update the latest draft resolution
     if (body.type === 'force_approve') {
-      const { data: resolutions } = await supabaseServer
-        .from('resolutions')
-        .select('id')
-        .eq('session_id', sessionId)
-        .eq('status', 'draft')
-        .order('version', { ascending: false })
-        .limit(1);
-
-      if (resolutions?.[0]) {
-        await supabaseServer
-          .from('resolutions')
-          .update({ status: 'approved' })
-          .eq('id', resolutions[0].id);
+      const draftResolution = await getLatestDraftResolution(sessionId);
+      if (draftResolution) {
+        await markResolutionApproved(draftResolution.id);
       }
     }
 

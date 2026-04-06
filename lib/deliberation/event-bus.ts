@@ -1,4 +1,4 @@
-import type { SSEEvent } from '@/lib/supabase/types';
+import type { SSEEvent } from '@/lib/db/types';
 
 interface SessionBusState {
   isRunning: boolean;

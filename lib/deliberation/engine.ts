@@ -1,5 +1,8 @@
-import { supabaseServer } from '@/lib/supabase/server';
-import type { DbPanelist, DbSession, SessionConfig, SessionStatus, SSEEvent } from '@/lib/supabase/types';
+import {
+  getSession, listPanelists, updateSessionStatus as dbUpdateSessionStatus,
+  getNewInterventions, markResolutionApproved,
+} from '@/lib/db/queries';
+import type { DbPanelist, DbSession, SessionConfig, SessionStatus, SSEEvent } from '@/lib/db/types';
 import { checkCostCap } from '@/lib/costs/tracker';
 import { runAnalysisPhase } from './phases/analysis';
 import { runDiscussionPhase } from './phases/discussion';
@@ -8,32 +11,26 @@ import { runDraftingPhase } from './phases/drafting';
 import { runVotingPhase } from './phases/voting';
 
 async function loadSession(sessionId: string): Promise<DbSession> {
-  const { data, error } = await supabaseServer
-    .from('sessions')
-    .select('*')
-    .eq('id', sessionId)
-    .single();
-
-  if (error || !data) throw new Error(`Session not found: ${sessionId}`);
-  return data as DbSession;
+  const session = await getSession(sessionId);
+  if (!session) throw new Error(`Session not found: ${sessionId}`);
+  return session;
 }
 
 async function loadPanelists(sessionId: string): Promise<DbPanelist[]> {
-  const { data, error } = await supabaseServer
-    .from('panelists')
-    .select('*')
-    .eq('session_id', sessionId)
-    .order('sort_order');
-
-  if (error) throw new Error(`Failed to load panelists: ${error.message}`);
-  return (data || []) as DbPanelist[];
+  return listPanelists(sessionId);
 }
 
 async function updateSessionStatus(sessionId: string, status: SessionStatus): Promise<void> {
-  await supabaseServer
-    .from('sessions')
-    .update({ status })
-    .eq('id', sessionId);
+  await dbUpdateSessionStatus(sessionId, status);
+}
+
+class SessionAbandoned extends Error {
+  constructor() { super('Session stopped by user'); this.name = 'SessionAbandoned'; }
+}
+
+async function checkAbandoned(sessionId: string): Promise<void> {
+  const current = await getSession(sessionId);
+  if (current?.status === 'abandoned') throw new SessionAbandoned();
 }
 
 export async function runDeliberation(
@@ -52,12 +49,7 @@ export async function runDeliberation(
     forceAdvance: boolean;
     nudge: string | null;
   }> {
-    const { data } = await supabaseServer
-      .from('interventions')
-      .select('*')
-      .eq('session_id', sessionId)
-      .gt('created_at', lastInterventionCheck)
-      .order('created_at');
+    const interventions = await getNewInterventions(sessionId, lastInterventionCheck);
 
     lastInterventionCheck = new Date().toISOString();
 
@@ -65,7 +57,7 @@ export async function runDeliberation(
     let forceAdvance = false;
     let nudge: string | null = null;
 
-    for (const intervention of data || []) {
+    for (const intervention of interventions) {
       switch (intervention.type) {
         case 'pause':
           pause = true;
@@ -88,15 +80,10 @@ export async function runDeliberation(
   async function waitForResume(): Promise<void> {
     while (true) {
       await new Promise((r) => setTimeout(r, 2000));
-      const { data } = await supabaseServer
-        .from('interventions')
-        .select('type')
-        .eq('session_id', sessionId)
-        .eq('type', 'resume')
-        .gt('created_at', lastInterventionCheck)
-        .limit(1);
+      const interventions = await getNewInterventions(sessionId, lastInterventionCheck);
 
-      if (data && data.length > 0) {
+      const hasResume = interventions.some((i) => i.type === 'resume');
+      if (hasResume) {
         lastInterventionCheck = new Date().toISOString();
         return;
       }
@@ -113,11 +100,13 @@ export async function runDeliberation(
     }
 
     // Phase 1: Analysis
+    await checkAbandoned(sessionId);
     await updateSessionStatus(sessionId, 'analyzing');
     emit({ type: 'phase_change', phase: 'analyzing' });
     await runAnalysisPhase(sessionId, panelists, session, config, emit);
 
     // Check interventions
+    await checkAbandoned(sessionId);
     const postAnalysis = await checkInterventions();
     if (postAnalysis.forceAdvance) {
       // Skip discussion, go straight to drafting with first panelist
@@ -137,12 +126,14 @@ export async function runDeliberation(
       }
 
       // Phase 2: Discussion
+      await checkAbandoned(sessionId);
       await updateSessionStatus(sessionId, 'discussing');
       emit({ type: 'phase_change', phase: 'discussing' });
       await runDiscussionPhase(sessionId, panelists, session, config, emit, checkInterventions, waitForResume);
     }
 
     // Cost check
+    await checkAbandoned(sessionId);
     const costCheck3 = await checkCostCap(sessionId, config.cost_cap_cents);
     if (!costCheck3.withinBudget) {
       emit({ type: 'error', message: `Cost cap reached ($${(costCheck3.currentCostCents / 100).toFixed(2)})`, fatal: true });
@@ -151,11 +142,13 @@ export async function runDeliberation(
     }
 
     // Phase 3: Drafter Election
+    await checkAbandoned(sessionId);
     await updateSessionStatus(sessionId, 'drafter_election');
     emit({ type: 'phase_change', phase: 'drafter_election' });
     const drafterId = await runDrafterElection(sessionId, panelists, session, config, emit);
 
     // Phase 4: Drafting
+    await checkAbandoned(sessionId);
     await updateSessionStatus(sessionId, 'drafting');
     emit({ type: 'phase_change', phase: 'drafting' });
     const resolutionId = await runDraftingPhase(sessionId, drafterId, panelists, session, config, emit);
@@ -164,10 +157,7 @@ export async function runDeliberation(
     const costCheck4 = await checkCostCap(sessionId, config.cost_cap_cents);
     if (!costCheck4.withinBudget) {
       // Force-approve the draft
-      await supabaseServer
-        .from('resolutions')
-        .update({ status: 'approved' })
-        .eq('id', resolutionId);
+      await markResolutionApproved(resolutionId);
       emit({ type: 'error', message: `Cost cap reached — draft auto-approved`, fatal: false });
       emit({ type: 'session_complete', resolutionId });
       await updateSessionStatus(sessionId, 'completed');
@@ -175,6 +165,7 @@ export async function runDeliberation(
     }
 
     // Phase 5: Voting
+    await checkAbandoned(sessionId);
     await updateSessionStatus(sessionId, 'voting');
     emit({ type: 'phase_change', phase: 'voting' });
     const finalResolutionId = await runVotingPhase(
@@ -189,6 +180,10 @@ export async function runDeliberation(
     await updateSessionStatus(sessionId, 'completed');
     emit({ type: 'session_complete', resolutionId: finalResolutionId });
   } catch (error) {
+    if (error instanceof SessionAbandoned) {
+      emit({ type: 'error', message: 'Session stopped by user', fatal: true });
+      return; // Already marked abandoned — don't overwrite
+    }
     const message = error instanceof Error ? error.message : 'Unknown engine error';
     emit({ type: 'error', message, fatal: true });
     await updateSessionStatus(sessionId, 'abandoned');

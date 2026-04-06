@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import { getSession, updateSessionStatus } from '@/lib/db/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,13 +13,9 @@ export async function POST(
     const { id: sessionId } = await params;
 
     // Verify session exists and is in a launchable state
-    const { data: session, error } = await supabaseServer
-      .from('sessions')
-      .select('status')
-      .eq('id', sessionId)
-      .single();
+    const session = await getSession(sessionId);
 
-    if (error || !session) {
+    if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
@@ -31,10 +27,7 @@ export async function POST(
     }
 
     // Update status to indicate the session is ready to run
-    await supabaseServer
-      .from('sessions')
-      .update({ status: 'briefing' })
-      .eq('id', sessionId);
+    await updateSessionStatus(sessionId, 'briefing');
 
     return NextResponse.json({ status: 'started' as const });
   } catch (error) {

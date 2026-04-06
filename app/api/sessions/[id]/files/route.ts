@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import { transaction } from '@/lib/db/client';
+import { getSession, insertSessionFile, updateSessionBriefing } from '@/lib/db/queries';
 import { extractText } from '@/lib/files/extractor';
 
 export async function POST(
@@ -10,11 +11,7 @@ export async function POST(
     const { id: sessionId } = await params;
 
     // Verify session exists
-    const { data: session } = await supabaseServer
-      .from('sessions')
-      .select('id, briefing_text')
-      .eq('id', sessionId)
-      .single();
+    const session = await getSession(sessionId);
 
     if (!session) {
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
@@ -30,17 +27,6 @@ export async function POST(
     const buffer = Buffer.from(await file.arrayBuffer());
     const fileName = file.name;
     const fileType = file.type || 'application/octet-stream';
-    const storagePath = `${sessionId}/${Date.now()}-${fileName}`;
-
-    // Upload to Supabase Storage
-    const { error: uploadError } = await supabaseServer.storage
-      .from('session-files')
-      .upload(storagePath, buffer, { contentType: fileType });
-
-    if (uploadError) {
-      // Storage bucket may not exist — fall back to just extracting text
-      console.error('Storage upload failed:', uploadError.message);
-    }
 
     // Extract text from file
     let extractedText = '';
@@ -50,21 +36,25 @@ export async function POST(
       extractedText = `[Failed to extract text from ${fileName}: ${err instanceof Error ? err.message : 'unknown error'}]`;
     }
 
-    // Insert session_files record
-    await supabaseServer.from('session_files').insert({
-      session_id: sessionId,
-      file_name: fileName,
-      file_type: fileType,
-      storage_path: storagePath,
-      extracted_text: extractedText,
-    });
+    // Insert file record and update briefing in a transaction
+    await transaction(async (tx) => {
+      await insertSessionFile(
+        {
+          session_id: sessionId,
+          file_name: fileName,
+          file_type: fileType,
+          extracted_text: extractedText,
+        },
+        tx
+      );
 
-    // Append extracted text to session briefing
-    const separator = `\n\n--- Content from file: ${fileName} ---\n`;
-    await supabaseServer
-      .from('sessions')
-      .update({ briefing_text: (session.briefing_text || '') + separator + extractedText })
-      .eq('id', sessionId);
+      const separator = `\n\n--- Content from file: ${fileName} ---\n`;
+      await updateSessionBriefing(
+        sessionId,
+        (session.briefing_text || '') + separator + extractedText,
+        tx
+      );
+    });
 
     return NextResponse.json({ fileName, extractedText: extractedText.slice(0, 200) + '...' });
   } catch (error) {

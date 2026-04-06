@@ -2,7 +2,7 @@
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { DbPanelist } from '@/lib/supabase/types';
+import type { DbPanelist } from '@/lib/db/types';
 import type { RoundGroup } from './ContributionFeed';
 import { ThinkingBlock } from './ThinkingBlock';
 

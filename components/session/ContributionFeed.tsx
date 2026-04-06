@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ThinkingBlock } from './ThinkingBlock';
-import type { Phase } from '@/lib/supabase/types';
+import type { Phase } from '@/lib/db/types';
 
 export interface ContributionItem {
   id: string;

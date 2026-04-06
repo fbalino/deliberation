@@ -1,5 +1,5 @@
-import { supabaseServer } from '@/lib/supabase/server';
-import type { DbPanelist, DbSession, SessionConfig, SSEEvent, TokenUsage } from '@/lib/supabase/types';
+import { insertRound, insertContribution } from '@/lib/db/queries';
+import type { DbPanelist, DbSession, SessionConfig, SSEEvent, TokenUsage } from '@/lib/db/types';
 import { callModelStream } from '@/lib/openrouter/client';
 import { logCost } from '@/lib/costs/tracker';
 import { analysisPrompt } from '@/lib/deliberation/prompts';
@@ -12,13 +12,7 @@ export async function runAnalysisPhase(
   emit: (event: SSEEvent) => void
 ): Promise<void> {
   // Create round
-  const { data: round } = await supabaseServer
-    .from('rounds')
-    .insert({ session_id: sessionId, phase: 'analysis', round_number: 1 })
-    .select()
-    .single();
-
-  if (!round) throw new Error('Failed to create analysis round');
+  const round = await insertRound(sessionId, 'analysis', 1);
 
   emit({ type: 'round_start', round: 1, phase: 'analysis' });
 
@@ -94,7 +88,7 @@ async function analyzeWithPanelist(
   emit({ type: 'contribution_end', panelistId: panelist.id, tokenUsage: usage });
 
   // Store contribution
-  await supabaseServer.from('contributions').insert({
+  await insertContribution({
     round_id: roundId,
     panelist_id: panelist.id,
     content,

@@ -176,7 +176,7 @@ export interface DbSessionFile {
   session_id: string;
   file_name: string;
   file_type: string;
-  storage_path: string;
+  storage_path: string | null;
   extracted_text: string | null;
   created_at: string;
 }

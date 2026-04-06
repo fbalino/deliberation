@@ -10,7 +10,7 @@ import { VoteSummary } from '@/components/session/VoteSummary';
 import { PhaseTransition } from '@/components/session/PhaseTransition';
 import { ResolutionPanel } from '@/components/session/ResolutionPanel';
 import { DraftView } from '@/components/session/DraftView';
-import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist, DbResolution } from '@/lib/supabase/types';
+import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist, DbResolution } from '@/lib/db/types';
 
 interface SessionState {
   phase: SessionStatus;

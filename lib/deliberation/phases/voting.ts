@@ -1,7 +1,10 @@
-import { supabaseServer } from '@/lib/supabase/server';
+import {
+  getResolution, insertRound, insertContribution,
+  markResolutionApproved, updateResolution, insertResolution,
+} from '@/lib/db/queries';
 import type {
   DbPanelist, DbSession, SessionConfig, SSEEvent, VoteData, VoteVerdict, ApprovalThreshold,
-} from '@/lib/supabase/types';
+} from '@/lib/db/types';
 import { callModelComplete } from '@/lib/openrouter/client';
 import { logCost } from '@/lib/costs/tracker';
 import { votingPrompt, draftingPrompt } from '@/lib/deliberation/prompts';
@@ -77,22 +80,11 @@ export async function runVotingPhase(
 
   for (let iteration = 1; iteration <= config.max_draft_iterations; iteration++) {
     // Load current draft
-    const { data: resolution } = await supabaseServer
-      .from('resolutions')
-      .select('*')
-      .eq('id', currentResolutionId)
-      .single();
-
+    const resolution = await getResolution(currentResolutionId);
     if (!resolution) throw new Error('Resolution not found');
 
     // Create voting round
-    const { data: round } = await supabaseServer
-      .from('rounds')
-      .insert({ session_id: sessionId, phase: 'voting', round_number: iteration })
-      .select()
-      .single();
-
-    if (!round) throw new Error(`Failed to create voting round ${iteration}`);
+    const round = await insertRound(sessionId, 'voting', iteration);
 
     emit({ type: 'round_start', round: iteration, phase: 'voting' });
 
@@ -139,7 +131,7 @@ export async function runVotingPhase(
           emit({ type: 'contribution_end', panelistId: panelist.id, tokenUsage: response.usage });
 
           // Store contribution with vote data
-          await supabaseServer.from('contributions').insert({
+          await insertContribution({
             round_id: round.id,
             panelist_id: panelist.id,
             content: response.content,
@@ -178,7 +170,7 @@ export async function runVotingPhase(
             tokenUsage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cached_tokens: 0, cost_cents: 0 },
           });
 
-          await supabaseServer.from('contributions').insert({
+          await insertContribution({
             round_id: round.id,
             panelist_id: panelist.id,
             content: fallbackVote.reasoning,
@@ -192,11 +184,7 @@ export async function runVotingPhase(
     const approved = tallyVotes(allVotes, config.approval_threshold, aiPanelists.length, config.custom_threshold_ratio);
 
     if (approved) {
-      await supabaseServer
-        .from('resolutions')
-        .update({ status: 'approved' })
-        .eq('id', currentResolutionId);
-
+      await markResolutionApproved(currentResolutionId);
       return currentResolutionId;
     }
 
@@ -209,10 +197,7 @@ export async function runVotingPhase(
           finalMarkdown += `### ${d.name}\n${d.reasoning}\n\n`;
         }
       }
-      await supabaseServer
-        .from('resolutions')
-        .update({ content_markdown: finalMarkdown, status: 'approved' })
-        .eq('id', currentResolutionId);
+      await updateResolution(currentResolutionId, { content_markdown: finalMarkdown, status: 'approved' });
       emit({ type: 'intervention_prompt', message: 'Resolution approved with minority report (dissenting opinions appended)' });
       return currentResolutionId;
     }
@@ -229,10 +214,7 @@ export async function runVotingPhase(
         }
       }
 
-      await supabaseServer
-        .from('resolutions')
-        .update({ content_markdown: finalMarkdown, status: 'approved' })
-        .eq('id', currentResolutionId);
+      await updateResolution(currentResolutionId, { content_markdown: finalMarkdown, status: 'approved' });
 
       emit({ type: 'intervention_prompt', message: 'Maximum draft iterations reached — resolution force-approved' });
       return currentResolutionId;
@@ -245,13 +227,7 @@ export async function runVotingPhase(
     const amendmentText = allAmendments.join('\n\n');
 
     // Create new drafting round
-    const { data: draftRound } = await supabaseServer
-      .from('rounds')
-      .insert({ session_id: sessionId, phase: 'drafting', round_number: iteration + 1 })
-      .select()
-      .single();
-
-    if (!draftRound) throw new Error('Failed to create re-drafting round');
+    const draftRound = await insertRound(sessionId, 'drafting', iteration + 1);
 
     emit({ type: 'round_start', round: iteration + 1, phase: 'drafting' });
     emit({ type: 'contribution_start', panelistId: drafter.id, panelistName: drafter.display_name });
@@ -273,7 +249,7 @@ export async function runVotingPhase(
       emit({ type: 'contribution_end', panelistId: drafter.id, tokenUsage: response.usage });
 
       // Store contribution
-      await supabaseServer.from('contributions').insert({
+      await insertContribution({
         round_id: draftRound.id,
         panelist_id: drafter.id,
         content: response.content,
@@ -283,20 +259,14 @@ export async function runVotingPhase(
       });
 
       // Create new resolution version
-      const { data: newResolution } = await supabaseServer
-        .from('resolutions')
-        .insert({
-          session_id: sessionId,
-          version: iteration + 1,
-          drafter_panelist_id: drafter.id,
-          draft_type: 'elected',
-          content_markdown: response.content,
-          status: 'draft',
-        })
-        .select()
-        .single();
-
-      if (!newResolution) throw new Error('Failed to create new resolution version');
+      const newResolution = await insertResolution({
+        session_id: sessionId,
+        version: iteration + 1,
+        drafter_panelist_id: drafter.id,
+        draft_type: 'elected',
+        content_markdown: response.content,
+        status: 'draft',
+      });
 
       currentResolutionId = newResolution.id;
 
@@ -310,10 +280,7 @@ export async function runVotingPhase(
       });
     } catch (error) {
       // If re-drafting fails, force-approve current version
-      await supabaseServer
-        .from('resolutions')
-        .update({ status: 'approved' })
-        .eq('id', currentResolutionId);
+      await markResolutionApproved(currentResolutionId);
 
       emit({ type: 'error', message: `Re-drafting failed: ${error instanceof Error ? error.message : 'unknown'}`, fatal: false });
       return currentResolutionId;

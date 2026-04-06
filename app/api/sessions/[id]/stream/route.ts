@@ -1,7 +1,7 @@
-import { supabaseServer } from '@/lib/supabase/server';
+import { getSession, listRounds, listPanelists, listContributionsForRounds, getApprovedResolution } from '@/lib/db/queries';
 import { sessionBus } from '@/lib/deliberation/event-bus';
 import { runDeliberation } from '@/lib/deliberation/engine';
-import type { SSEEvent, DbSession, SessionStatus, Phase, VoteVerdict } from '@/lib/supabase/types';
+import type { SSEEvent, DbSession, SessionStatus, Phase, VoteVerdict } from '@/lib/db/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -26,11 +26,7 @@ export async function GET(
 
       try {
         // Check session state
-        const { data: session } = await supabaseServer
-          .from('sessions')
-          .select('*')
-          .eq('id', sessionId)
-          .single();
+        const session = await getSession(sessionId);
 
         if (!session) {
           send({ type: 'error', message: 'Session not found', fatal: true });
@@ -110,28 +106,27 @@ export async function GET(
 }
 
 async function sendHistoricalEvents(sessionId: string, send: (event: SSEEvent) => void) {
-  // Load all rounds with contributions
-  const { data: rounds } = await supabaseServer
-    .from('rounds')
-    .select('*, contributions(*, panelists!inner(display_name))')
-    .eq('session_id', sessionId)
-    .order('round_number');
+  // Load all rounds, panelists, contributions, and approved resolution
+  const [rounds, panelists, approvedResolution] = await Promise.all([
+    listRounds(sessionId),
+    listPanelists(sessionId),
+    getApprovedResolution(sessionId),
+  ]);
 
-  const { data: panelists } = await supabaseServer
-    .from('panelists')
-    .select('*')
-    .eq('session_id', sessionId);
+  const roundIds = rounds.map((r) => r.id);
+  const contributions = await listContributionsForRounds(roundIds);
 
-  const { data: resolutions } = await supabaseServer
-    .from('resolutions')
-    .select('*')
-    .eq('session_id', sessionId)
-    .eq('status', 'approved')
-    .limit(1);
+  // Group contributions by round_id
+  const contribsByRound = new Map<string, typeof contributions>();
+  for (const c of contributions) {
+    const arr = contribsByRound.get(c.round_id) || [];
+    arr.push(c);
+    contribsByRound.set(c.round_id, arr);
+  }
 
   let lastPhase = '';
 
-  for (const round of rounds || []) {
+  for (const round of rounds) {
     if (round.phase !== lastPhase) {
       const statusMap: Record<string, string> = {
         analysis: 'analyzing',
@@ -146,21 +141,14 @@ async function sendHistoricalEvents(sessionId: string, send: (event: SSEEvent) =
 
     send({ type: 'round_start', round: round.round_number, phase: round.phase as Phase });
 
-    const contributions = (round as Record<string, unknown>).contributions as Array<{
-      panelist_id: string;
-      content: string;
-      thinking_content: string | null;
-      token_usage: Record<string, number> | null;
-      vote_data: Record<string, unknown> | null;
-      panelists: { display_name: string };
-    }>;
+    const roundContribs = contribsByRound.get(round.id) || [];
 
-    for (const contrib of contributions || []) {
-      const panelist = (panelists || []).find((p) => p.id === contrib.panelist_id);
+    for (const contrib of roundContribs) {
+      const panelist = panelists.find((p) => p.id === contrib.panelist_id);
       send({
         type: 'contribution_start',
         panelistId: contrib.panelist_id,
-        panelistName: panelist?.display_name || 'Unknown',
+        panelistName: panelist?.display_name || contrib.panelist_display_name || 'Unknown',
       });
       send({
         type: 'contribution_chunk',
@@ -199,7 +187,7 @@ async function sendHistoricalEvents(sessionId: string, send: (event: SSEEvent) =
     }
   }
 
-  if (resolutions?.[0]) {
-    send({ type: 'session_complete', resolutionId: resolutions[0].id });
+  if (approvedResolution) {
+    send({ type: 'session_complete', resolutionId: approvedResolution.id });
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import type { SessionStatus } from '@/lib/supabase/types';
+import type { SessionStatus } from '@/lib/db/types';
 
 const PHASES = [
   { key: 'analyzing', label: 'Analysis', filterPhases: ['analysis'] },

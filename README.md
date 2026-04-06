@@ -105,7 +105,7 @@ The deliberation process follows a structured 5-phase pipeline. Each phase build
 ┌─────────────────────────────────────────────────────────────┐
 │                   SESSION COMPLETE                           │
 │                                                             │
-│  Final resolution stored in Supabase.                       │
+│  Final resolution stored in the database.                    │
 │  Full cost breakdown available.                             │
 │  Session can be chained into follow-up deliberations.       │
 └─────────────────────────────────────────────────────────────┘
@@ -123,7 +123,7 @@ The deliberation process follows a structured 5-phase pipeline. Each phase build
 | Layer | Technology |
 |-------|-----------|
 | Framework | Next.js (App Router) |
-| Database | Supabase (PostgreSQL) |
+| Database | Neon (PostgreSQL via Vercel Marketplace) |
 | AI Models | OpenRouter (Anthropic, OpenAI, Google) |
 | Styling | Tailwind CSS |
 | Language | TypeScript |
@@ -137,7 +137,7 @@ npm install
 
 # Set up environment variables
 cp .env.local.example .env.local
-# Fill in: OPENROUTER_API_KEY, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
+# Fill in: OPENROUTER_API_KEY, POSTGRES_URL
 
 # Run dev server
 npm run dev -- -p 1337
@@ -148,9 +148,7 @@ npm run dev -- -p 1337
 | Variable | Description |
 |----------|-------------|
 | `OPENROUTER_API_KEY` | OpenRouter API key for LLM calls |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-side) |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/publishable key (client-side) |
+| `POSTGRES_URL` | Neon/Vercel Postgres connection string |
 | `OPENAI_API_KEY` | Direct OpenAI API key (optional) |
 | `ANTHROPIC_API_KEY` | Direct Anthropic API key (optional) |
 | `GEMINI_API_KEY` | Direct Google Gemini API key (optional) |

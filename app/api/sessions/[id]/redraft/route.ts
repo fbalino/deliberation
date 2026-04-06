@@ -1,9 +1,17 @@
-import { supabaseServer } from '@/lib/supabase/server';
+import {
+  getSession,
+  listPanelists,
+  listRounds,
+  listDrafterVotes,
+  getLatestResolution,
+  markResolutionsRejected,
+  updateSessionStatus,
+} from '@/lib/db/queries';
 import { sessionBus } from '@/lib/deliberation/event-bus';
 import { runDraftingPhase } from '@/lib/deliberation/phases/drafting';
 import { runVotingPhase } from '@/lib/deliberation/phases/voting';
 import { checkCostCap } from '@/lib/costs/tracker';
-import type { SSEEvent, DbSession, DbPanelist, SessionConfig, SessionStatus } from '@/lib/supabase/types';
+import type { SSEEvent, DbPanelist, SessionConfig, SessionStatus } from '@/lib/db/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -30,49 +38,31 @@ export async function GET(
 
       try {
         // Load session
-        const { data: sessionRow } = await supabaseServer
-          .from('sessions')
-          .select('*')
-          .eq('id', sessionId)
-          .single();
+        const session = await getSession(sessionId);
 
-        if (!sessionRow) {
+        if (!session) {
           send({ type: 'error', message: 'Session not found', fatal: true });
           controller.close();
           return;
         }
 
-        const session = sessionRow as DbSession;
         const config = session.config as SessionConfig;
 
         // Load panelists
-        const { data: panelistRows } = await supabaseServer
-          .from('panelists')
-          .select('*')
-          .eq('session_id', sessionId)
-          .order('sort_order');
-
-        const panelists = (panelistRows || []) as DbPanelist[];
+        const panelists: DbPanelist[] = await listPanelists(sessionId);
 
         // Find the elected drafter from existing contributions
-        const { data: electionRounds } = await supabaseServer
-          .from('rounds')
-          .select('id')
-          .eq('session_id', sessionId)
-          .eq('phase', 'drafter_election');
+        const electionRounds = await listRounds(sessionId, ['drafter_election']);
 
         let drafterId: string | null = null;
 
-        if (electionRounds?.length) {
-          const { data: votes } = await supabaseServer
-            .from('contributions')
-            .select('drafter_vote')
-            .in('round_id', electionRounds.map((r) => r.id))
-            .not('drafter_vote', 'is', null);
+        if (electionRounds.length) {
+          const electionRoundIds = electionRounds.map((r) => r.id);
+          const votes = await listDrafterVotes(electionRoundIds);
 
           // Tally votes
           const tally = new Map<string, number>();
-          for (const v of votes || []) {
+          for (const v of votes) {
             if (v.drafter_vote) tally.set(v.drafter_vote, (tally.get(v.drafter_vote) || 0) + 1);
           }
           let maxVotes = 0;
@@ -83,12 +73,7 @@ export async function GET(
 
         // Fallback: check existing resolutions for the drafter
         if (!drafterId) {
-          const { data: existingRes } = await supabaseServer
-            .from('resolutions')
-            .select('drafter_panelist_id')
-            .eq('session_id', sessionId)
-            .limit(1)
-            .single();
+          const existingRes = await getLatestResolution(sessionId);
           drafterId = existingRes?.drafter_panelist_id || null;
         }
 
@@ -120,14 +105,10 @@ export async function GET(
 
         try {
           // Mark old resolutions as rejected
-          await supabaseServer
-            .from('resolutions')
-            .update({ status: 'rejected' })
-            .eq('session_id', sessionId)
-            .in('status', ['draft', 'approved']);
+          await markResolutionsRejected(sessionId, ['draft', 'approved']);
 
           // Set session back to drafting
-          await supabaseServer.from('sessions').update({ status: 'drafting' as SessionStatus }).eq('id', sessionId);
+          await updateSessionStatus(sessionId, 'drafting' as SessionStatus);
           emit({ type: 'phase_change', phase: 'drafting' });
 
           const drafter = panelists.find((p) => p.id === drafterId);
@@ -137,7 +118,7 @@ export async function GET(
           const resolutionId = await runDraftingPhase(sessionId, drafterId, panelists, session, config, emit);
 
           // Re-run voting
-          await supabaseServer.from('sessions').update({ status: 'voting' as SessionStatus }).eq('id', sessionId);
+          await updateSessionStatus(sessionId, 'voting' as SessionStatus);
           emit({ type: 'phase_change', phase: 'voting' });
 
           const finalResolutionId = await runVotingPhase(
@@ -145,12 +126,12 @@ export async function GET(
           );
 
           // Done
-          await supabaseServer.from('sessions').update({ status: 'completed' as SessionStatus }).eq('id', sessionId);
+          await updateSessionStatus(sessionId, 'completed' as SessionStatus);
           emit({ type: 'session_complete', resolutionId: finalResolutionId });
         } catch (error) {
           const msg = error instanceof Error ? error.message : 'Redraft error';
           emit({ type: 'error', message: msg, fatal: true });
-          await supabaseServer.from('sessions').update({ status: 'abandoned' as SessionStatus }).eq('id', sessionId);
+          await updateSessionStatus(sessionId, 'abandoned' as SessionStatus);
         } finally {
           unsubscribe();
           sessionBus.setRunning(sessionId, false);

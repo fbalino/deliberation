@@ -1,4 +1,4 @@
-import type { TokenUsage } from '@/lib/supabase/types';
+import type { TokenUsage } from '@/lib/db/types';
 
 export type Provider = 'anthropic' | 'openai' | 'google';
 

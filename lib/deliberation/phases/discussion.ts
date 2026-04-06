@@ -1,5 +1,5 @@
-import { supabaseServer } from '@/lib/supabase/server';
-import type { DbPanelist, DbSession, SessionConfig, SSEEvent, TokenUsage } from '@/lib/supabase/types';
+import { listRounds, listContributionsForRounds, insertRound, insertContribution, getSession } from '@/lib/db/queries';
+import type { DbPanelist, DbSession, SessionConfig, SSEEvent, TokenUsage } from '@/lib/db/types';
 import { callModelStream } from '@/lib/openrouter/client';
 import { logCost } from '@/lib/costs/tracker';
 import { discussionPrompt } from '@/lib/deliberation/prompts';
@@ -16,23 +16,12 @@ export async function runDiscussionPhase(
   waitForResume: () => Promise<void>
 ): Promise<void> {
   // Load analyses from the analysis round
-  const { data: analysisRound } = await supabaseServer
-    .from('rounds')
-    .select('id')
-    .eq('session_id', sessionId)
-    .eq('phase', 'analysis')
-    .single();
+  const analysisRounds = await listRounds(sessionId, ['analysis']);
+  const analysisRoundIds = analysisRounds.map((r) => r.id);
+  const analysisContribs = await listContributionsForRounds(analysisRoundIds);
 
-  const { data: analysisContribs } = await supabaseServer
-    .from('contributions')
-    .select('*, panelists!inner(display_name)')
-    .eq('round_id', analysisRound?.id || '');
-
-  const analysesText = (analysisContribs || [])
-    .map((c) => {
-      const name = (c as Record<string, unknown>).panelists as { display_name: string } | undefined;
-      return `[${name?.display_name || 'Unknown'}]:\n${c.content}`;
-    })
+  const analysesText = analysisContribs
+    .map((c) => `[${c.panelist_display_name || 'Unknown'}]:\n${c.content}`)
     .join('\n\n---\n\n');
 
   let discussionTranscript = '';
@@ -52,15 +41,13 @@ export async function runDiscussionPhase(
       emit({ type: 'intervention_prompt', message: 'Discussion resumed' });
     }
 
+    // Kill switch: check if session was abandoned between rounds
+    const currentSession = await getSession(sessionId);
+    if (currentSession?.status === 'abandoned') break;
+
     if (roundNum > config.hard_round_cap) break;
 
-    const { data: round } = await supabaseServer
-      .from('rounds')
-      .insert({ session_id: sessionId, phase: 'discussion', round_number: roundNum })
-      .select()
-      .single();
-
-    if (!round) throw new Error(`Failed to create discussion round ${roundNum}`);
+    const round = await insertRound(sessionId, 'discussion', roundNum);
 
     emit({ type: 'round_start', round: roundNum, phase: 'discussion' });
 
@@ -114,7 +101,7 @@ export async function runDiscussionPhase(
         }
 
         // Store contribution
-        await supabaseServer.from('contributions').insert({
+        await insertContribution({
           round_id: round.id,
           panelist_id: panelist.id,
           content: result.content,
@@ -163,7 +150,7 @@ export async function runDiscussionPhase(
             emit({ type: 'extension_request', panelistId: panelist.id, reason: consensus.extensionReason });
           }
 
-          await supabaseServer.from('contributions').insert({
+          await insertContribution({
             round_id: round.id,
             panelist_id: panelist.id,
             content: result.content,

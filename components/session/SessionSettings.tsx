@@ -1,6 +1,6 @@
 'use client';
 
-import type { SessionConfig, PanelistConfig as PanelistConfigType } from '@/lib/supabase/types';
+import type { SessionConfig, PanelistConfig as PanelistConfigType } from '@/lib/db/types';
 
 interface Props {
   config: SessionConfig;

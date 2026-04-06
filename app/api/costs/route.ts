@@ -1,14 +1,9 @@
 import { NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import { listCostLogs } from '@/lib/db/queries';
 
 export async function GET() {
   try {
-    // Get all cost_log entries
-    const { data: costLogs } = await supabaseServer
-      .from('cost_log')
-      .select('model_id, phase, cost_cents, session_id');
-
-    const logs = costLogs || [];
+    const logs = await listCostLogs();
 
     // Aggregate by model
     const byModel: Record<string, { total: number; calls: number }> = {};

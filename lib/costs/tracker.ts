@@ -1,5 +1,5 @@
-import { supabaseServer } from '@/lib/supabase/server';
-import type { Phase, TokenUsage } from '@/lib/supabase/types';
+import { insertCostLog, incrementSessionCost, getSessionCost as dbGetSessionCost } from '@/lib/db/queries';
+import type { Phase, TokenUsage } from '@/lib/db/types';
 
 export async function logCost(params: {
   sessionId: string;
@@ -9,7 +9,7 @@ export async function logCost(params: {
   modelId: string;
   usage: TokenUsage;
 }): Promise<void> {
-  await supabaseServer.from('cost_log').insert({
+  await insertCostLog({
     session_id: params.sessionId,
     panelist_id: params.panelistId,
     phase: params.phase,
@@ -22,35 +22,11 @@ export async function logCost(params: {
     cost_cents: params.usage.cost_cents,
   });
 
-  await updateSessionTotalCost(params.sessionId, params.usage.cost_cents);
-}
-
-export async function updateSessionTotalCost(
-  sessionId: string,
-  additionalCents: number
-): Promise<void> {
-  const { data } = await supabaseServer
-    .from('sessions')
-    .select('total_cost_cents')
-    .eq('id', sessionId)
-    .single();
-
-  if (data) {
-    await supabaseServer
-      .from('sessions')
-      .update({ total_cost_cents: data.total_cost_cents + additionalCents })
-      .eq('id', sessionId);
-  }
+  await incrementSessionCost(params.sessionId, params.usage.cost_cents);
 }
 
 export async function getSessionCost(sessionId: string): Promise<number> {
-  const { data } = await supabaseServer
-    .from('sessions')
-    .select('total_cost_cents')
-    .eq('id', sessionId)
-    .single();
-
-  return data?.total_cost_cents ?? 0;
+  return dbGetSessionCost(sessionId);
 }
 
 export async function checkCostCap(

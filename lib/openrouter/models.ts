@@ -1,5 +1,5 @@
 import type { ModelDefinition } from './types';
-import type { PanelistConfig } from '@/lib/supabase/types';
+import type { PanelistConfig } from '@/lib/db/types';
 
 export const MODEL_REGISTRY: ModelDefinition[] = [
   {

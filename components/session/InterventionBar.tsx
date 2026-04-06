@@ -42,6 +42,20 @@ export function InterventionBar({ sessionId, isPaused, isActive, userRole, curre
     await sendIntervention('force_advance');
   }
 
+  async function handleStop() {
+    if (!confirm('Stop this session immediately? It will be marked as abandoned.')) return;
+    setIsLoading(true);
+    try {
+      await fetch(`/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'abandoned' }),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   return (
     <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
       <div className="flex items-center gap-3">
@@ -79,6 +93,11 @@ export function InterventionBar({ sessionId, isPaused, isActive, userRole, curre
         {/* Force Advance */}
         <Button variant="danger" size="sm" onClick={handleForceAdvance}>
           Force Advance
+        </Button>
+
+        {/* Stop Session */}
+        <Button variant="danger" size="sm" onClick={handleStop} loading={isLoading}>
+          Stop
         </Button>
       </div>
 

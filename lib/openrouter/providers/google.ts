@@ -1,4 +1,4 @@
-import type { TokenUsage } from '@/lib/supabase/types';
+import type { TokenUsage } from '@/lib/db/types';
 import type { CallModelParams, StreamChunk, ModelResponse } from '../types';
 import { getModelById } from '../models';
 

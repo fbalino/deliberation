@@ -1,5 +1,5 @@
-import { supabaseServer } from '@/lib/supabase/server';
-import type { DbPanelist, DbSession, SessionConfig, SSEEvent } from '@/lib/supabase/types';
+import { listRounds, listContributionsForRound, insertRound, insertContribution } from '@/lib/db/queries';
+import type { DbPanelist, DbSession, SessionConfig, SSEEvent } from '@/lib/db/types';
 import { callModelComplete } from '@/lib/openrouter/client';
 import { logCost } from '@/lib/costs/tracker';
 import { drafterElectionPrompt } from '@/lib/deliberation/prompts';
@@ -21,28 +21,20 @@ export async function runDrafterElection(
   }
 
   // Load discussion transcript for context
-  const { data: rounds } = await supabaseServer
-    .from('rounds')
-    .select('id, phase')
-    .eq('session_id', sessionId)
-    .in('phase', ['analysis', 'discussion']);
+  const rounds = await listRounds(sessionId, ['analysis', 'discussion']);
+  const roundIds = rounds.map((r) => r.id);
 
-  const roundIds = (rounds || []).map((r) => r.id);
-  const { data: contribs } = await supabaseServer
-    .from('contributions')
-    .select('content')
-    .in('round_id', roundIds);
+  // Collect all contributions across these rounds
+  const allContribs: { content: string }[] = [];
+  for (const roundId of roundIds) {
+    const contribs = await listContributionsForRound(roundId);
+    allContribs.push(...contribs);
+  }
 
-  const transcript = (contribs || []).map((c) => c.content).join('\n---\n');
+  const transcript = allContribs.map((c) => c.content).join('\n---\n');
 
   // Create election round
-  const { data: round } = await supabaseServer
-    .from('rounds')
-    .insert({ session_id: sessionId, phase: 'drafter_election', round_number: 1 })
-    .select()
-    .single();
-
-  if (!round) throw new Error('Failed to create drafter election round');
+  const round = await insertRound(sessionId, 'drafter_election', 1);
 
   emit({ type: 'round_start', round: 1, phase: 'drafter_election' });
 
@@ -98,7 +90,7 @@ export async function runDrafterElection(
         emit({ type: 'contribution_end', panelistId: panelist.id, tokenUsage: response.usage });
 
         // Store vote
-        await supabaseServer.from('contributions').insert({
+        await insertContribution({
           round_id: round.id,
           panelist_id: panelist.id,
           content: response.content,
@@ -123,7 +115,7 @@ export async function runDrafterElection(
           tokenUsage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cached_tokens: 0, cost_cents: 0 },
         });
 
-        await supabaseServer.from('contributions').insert({
+        await insertContribution({
           round_id: round.id,
           panelist_id: panelist.id,
           content: `[Vote unavailable: ${error instanceof Error ? error.message : 'unknown error'}]`,

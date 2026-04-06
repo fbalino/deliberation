@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
 import { MODEL_REGISTRY, AVATAR_COLORS } from '@/lib/openrouter/models';
-import type { PanelistConfig as PanelistConfigType } from '@/lib/supabase/types';
+import type { PanelistConfig as PanelistConfigType } from '@/lib/db/types';
 
 type ModelStatus = { ok: boolean; error?: string; latencyMs: number };
 

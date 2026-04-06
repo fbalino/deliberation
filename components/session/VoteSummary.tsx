@@ -1,7 +1,7 @@
 'use client';
 
 import { Badge } from '@/components/ui/Badge';
-import type { VoteVerdict } from '@/lib/supabase/types';
+import type { VoteVerdict } from '@/lib/db/types';
 
 interface VoteEntry {
   panelistId: string;

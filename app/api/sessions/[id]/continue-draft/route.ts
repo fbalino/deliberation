@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import {
+  getLatestResolutionWithDrafter,
+  listRounds,
+  listContributionsForRounds,
+  getSession,
+  updateResolution,
+} from '@/lib/db/queries';
 import { callModelStream } from '@/lib/openrouter/client';
-import type { SSEEvent, TokenUsage } from '@/lib/supabase/types';
+import type { SSEEvent, TokenUsage } from '@/lib/db/types';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -28,14 +34,8 @@ export async function GET(
       }
 
       try {
-        // Load the latest resolution
-        const { data: resolution } = await supabaseServer
-          .from('resolutions')
-          .select('*, panelists!drafter_panelist_id(model_id, display_name)')
-          .eq('session_id', sessionId)
-          .order('version', { ascending: false })
-          .limit(1)
-          .single();
+        // Load the latest resolution with drafter info
+        const resolution = await getLatestResolutionWithDrafter(sessionId);
 
         if (!resolution) {
           send({ type: 'error', message: 'No resolution found to continue', fatal: true });
@@ -43,53 +43,32 @@ export async function GET(
           return;
         }
 
-        const drafterInfo = resolution.panelists as unknown as { model_id: string; display_name: string } | null;
-        const modelId = drafterInfo?.model_id || 'claude-opus-4-6';
-        const drafterName = drafterInfo?.display_name || 'Drafter';
+        const modelId = resolution.drafter_model_id || 'claude-opus-4-6';
+        const drafterName = resolution.drafter_display_name || 'Drafter';
 
         send({ type: 'intervention_prompt', message: `Continuing truncated draft with ${drafterName}...` });
 
         // Load the full deliberation transcript so Opus has full context
-        const { data: rounds } = await supabaseServer
-          .from('rounds')
-          .select('id, phase, round_number')
-          .eq('session_id', sessionId)
-          .in('phase', ['analysis', 'discussion'])
-          .order('round_number');
+        const rounds = await listRounds(sessionId, ['analysis', 'discussion']);
 
-        const roundIds = (rounds || []).map((r) => r.id);
-        const { data: allContribs } = await supabaseServer
-          .from('contributions')
-          .select('*, panelists!inner(display_name)')
-          .in('round_id', roundIds.length > 0 ? roundIds : ['__none__'])
-          .order('created_at');
+        const roundIds = rounds.map((r) => r.id);
+        const allContribs = await listContributionsForRounds(roundIds);
 
-        const analysisRoundIds = (rounds || []).filter((r) => r.phase === 'analysis').map((r) => r.id);
-        const discussionRoundIds = (rounds || []).filter((r) => r.phase === 'discussion').map((r) => r.id);
+        const analysisRoundIds = rounds.filter((r) => r.phase === 'analysis').map((r) => r.id);
+        const discussionRoundIds = rounds.filter((r) => r.phase === 'discussion').map((r) => r.id);
 
-        const analysesText = (allContribs || [])
+        const analysesText = allContribs
           .filter((c) => analysisRoundIds.includes(c.round_id))
-          .map((c) => {
-            const name = (c as Record<string, unknown>).panelists as { display_name: string } | undefined;
-            return `[${name?.display_name || 'Unknown'}]:\n${c.content}`;
-          })
+          .map((c) => `[${c.panelist_display_name || 'Unknown'}]:\n${c.content}`)
           .join('\n\n---\n\n');
 
-        const discussionText = (allContribs || [])
+        const discussionText = allContribs
           .filter((c) => discussionRoundIds.includes(c.round_id))
-          .map((c) => {
-            const name = (c as Record<string, unknown>).panelists as { display_name: string } | undefined;
-            return `[${name?.display_name || 'Unknown'}]:\n${c.content}`;
-          })
+          .map((c) => `[${c.panelist_display_name || 'Unknown'}]:\n${c.content}`)
           .join('\n\n');
 
         // Load the session briefing
-        const { data: sessionData } = await supabaseServer
-          .from('sessions')
-          .select('briefing_text')
-          .eq('id', sessionId)
-          .single();
-
+        const sessionData = await getSession(sessionId);
         const briefing = sessionData?.briefing_text || '';
         const truncatedContent = resolution.content_markdown;
 
@@ -121,10 +100,10 @@ export async function GET(
         // Append continuation to the resolution
         const updatedMarkdown = truncatedContent + '\n' + continuation;
 
-        await supabaseServer
-          .from('resolutions')
-          .update({ content_markdown: updatedMarkdown, status: 'approved' })
-          .eq('id', resolution.id);
+        await updateResolution(resolution.id, {
+          content_markdown: updatedMarkdown,
+          status: 'approved',
+        });
 
         send({ type: 'intervention_prompt', message: `Draft completed — ${continuation.length} characters appended` });
         send({ type: 'session_complete', resolutionId: resolution.id });

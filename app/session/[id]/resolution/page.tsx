@@ -7,7 +7,7 @@ import remarkGfm from 'remark-gfm';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { VoteSummary } from '@/components/session/VoteSummary';
-import type { SessionDetail, VoteVerdict, DbPanelist } from '@/lib/supabase/types';
+import type { SessionDetail, VoteVerdict, DbPanelist } from '@/lib/db/types';
 
 export default function ResolutionPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: sessionId } = use(params);

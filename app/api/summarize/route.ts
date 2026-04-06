@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseServer } from '@/lib/supabase/server';
+import { getSession, updateSessionConfig } from '@/lib/db/queries';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,11 +23,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if summaries are already cached on the session
-    const { data: session } = await supabaseServer
-      .from('sessions')
-      .select('config')
-      .eq('id', sessionId)
-      .single();
+    const session = await getSession(sessionId);
 
     const config = (session?.config || {}) as Record<string, unknown>;
     const cached = config._panelist_summaries as Record<string, string> | undefined;
@@ -47,10 +43,7 @@ export async function POST(request: NextRequest) {
     );
 
     // Cache on the session config
-    await supabaseServer
-      .from('sessions')
-      .update({ config: { ...config, _panelist_summaries: summaries } })
-      .eq('id', sessionId);
+    await updateSessionConfig(sessionId, { ...config, _panelist_summaries: summaries });
 
     return NextResponse.json({ summaries });
   } catch {

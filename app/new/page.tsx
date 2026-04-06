@@ -8,8 +8,8 @@ import { Card } from '@/components/ui/Card';
 import { PanelistConfig } from '@/components/session/PanelistConfig';
 import { SessionSettings } from '@/components/session/SessionSettings';
 import { getDefaultPanelists } from '@/lib/openrouter/models';
-import { DEFAULT_SESSION_CONFIG } from '@/lib/supabase/types';
-import type { PanelistConfig as PanelistConfigType, SessionConfig, DbPreset } from '@/lib/supabase/types';
+import { DEFAULT_SESSION_CONFIG } from '@/lib/db/types';
+import type { PanelistConfig as PanelistConfigType, SessionConfig, DbPreset } from '@/lib/db/types';
 
 export default function NewSessionPage() {
   return (
