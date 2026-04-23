@@ -23,7 +23,7 @@ export function PhaseIndicator({ currentPhase, activeTab, onTabClick }: Props) {
   const adjustedIndex = currentPhase === 'drafter_election' ? 2 : currentIndex;
 
   return (
-    <div className="flex items-center gap-0.5 p-1 rounded-xl" style={{ background: 'var(--surface-inset)' }}>
+    <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: 'var(--surface-inset)' }}>
       {PHASES.map((phase, index) => {
         const isTerminal = currentPhase === 'completed' || currentPhase === 'abandoned';
         const isCompleted = adjustedIndex > index || isTerminal;
@@ -37,7 +37,7 @@ export function PhaseIndicator({ currentPhase, activeTab, onTabClick }: Props) {
             type="button"
             disabled={!isClickable && !onTabClick}
             onClick={() => onTabClick?.(phase.key)}
-            className="relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-all duration-150"
+            className="relative flex flex-col items-center gap-1 px-3 py-2 text-xs font-semibold transition-all duration-150"
             style={{
               borderRadius: 'var(--radius-md)',
               background: isSelected ? 'var(--surface)' : 'transparent',
@@ -54,7 +54,7 @@ export function PhaseIndicator({ currentPhase, activeTab, onTabClick }: Props) {
           >
             {/* Status dot */}
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${isActive ? 'animate-pulse' : ''}`}
+              className={`h-1.5 w-8 rounded-full shrink-0 ${isActive ? 'animate-pulse' : ''}`}
               style={{
                 background: isCompleted && !isActive
                   ? 'var(--success)'

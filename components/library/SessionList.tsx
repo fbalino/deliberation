@@ -10,7 +10,8 @@ interface SessionListProps {
     tags: string[] | null;
     total_cost_cents: number;
     created_at: string;
-    panelists: { count: number }[];
+    panelist_count?: number;
+    panelists?: { count: number }[];
     chain_parent_id?: string | null;
   }>;
 }
@@ -31,7 +32,7 @@ export function SessionList({ sessions }: SessionListProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 gap-3">
       {sessions.map((session) => (
         <SessionCard key={session.id} {...session} />
       ))}

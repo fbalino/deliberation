@@ -41,13 +41,6 @@ export async function runDrafterElection(
   const aiPanelists = panelists.filter((p) => !p.is_human);
   const panelistNames = aiPanelists.map((p) => p.display_name);
 
-  const { system, user } = drafterElectionPrompt({
-    briefing: session.briefing_text || '',
-    analyses: transcript.slice(0, 2000),
-    discussionTranscript: transcript.slice(2000, 4000),
-    panelistNames,
-  });
-
   // Collect votes
   const votes = new Map<string, number>();
 
@@ -56,6 +49,14 @@ export async function runDrafterElection(
       emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
       try {
+        const { system, user } = drafterElectionPrompt({
+          briefing: session.briefing_text || '',
+          analyses: transcript.slice(0, 2000),
+          discussionTranscript: transcript.slice(2000, 4000),
+          panelistNames,
+          panelistName: panelist.display_name,
+        });
+
         const response = await callModelComplete({
           modelId: panelist.model_id,
           messages: [{ role: 'user', content: user }],

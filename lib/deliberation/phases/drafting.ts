@@ -44,6 +44,7 @@ export async function runDraftingPhase(
     briefing: session.briefing_text || '',
     analyses: analysesText,
     discussionTranscript: discussionText,
+    panelistName: drafter.display_name,
   });
 
   let content = '';

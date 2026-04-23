@@ -60,7 +60,7 @@ Work top to bottom. Each section builds on the previous one. The PRD has the ful
 - [ ] **FOUND-03**: Create the full database migration (`supabase/migrations/001_initial_schema.sql`) with ALL tables from the PRD: `presets`, `sessions`, `session_files`, `panelists`, `rounds`, `contributions`, `interventions`, `resolutions`, `cost_log`. Copy the exact schema from the PRD.
 - [ ] **FOUND-04**: Build basic UI primitives in `components/ui/` — Button, Card, Input, Badge, and a basic app layout in `app/layout.tsx` with Tailwind. Keep it clean and minimal.
 - [ ] **FOUND-05**: Create the OpenRouter client at `lib/openrouter/client.ts` — the `callModel()` function from the PRD spec. Must support both streaming (SSE/AsyncGenerator) and non-streaming modes. Parse `x-openrouter-*` headers for token usage and cost. Include retry logic (3 attempts, exponential backoff).
-- [ ] **FOUND-06**: Create the model registry at `lib/openrouter/models.ts` — default roster (Claude Opus 4.6, GPT-5.4, Gemini 3.1 Pro) with OpenRouter IDs and pricing. Export types for panelist configuration.
+- [ ] **FOUND-06**: Create the model registry at `lib/openrouter/models.ts` — default roster (Claude Opus 4.7, GPT-5.4, Gemini 3.1 Pro) with OpenRouter IDs and pricing. Export types for panelist configuration.
 - [ ] **FOUND-07**: Create the cost tracker at `lib/costs/tracker.ts` — log token usage and cost per API call to the `cost_log` table. Calculate cost from token counts and model pricing.
 - [ ] **FOUND-08**: Create default prompt templates at `lib/deliberation/prompts.ts` — analysis prompt, discussion round prompt, drafting prompt, voting prompt, drafter election prompt. Use the exact templates from the PRD with `{briefing}`, `{analyses}`, `{discussion_transcript}` placeholders.
 

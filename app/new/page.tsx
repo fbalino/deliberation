@@ -36,6 +36,7 @@ function NewSessionInner() {
   const [error, setError] = useState('');
   const [presets, setPresets] = useState<DbPreset[]>([]);
   const [presetName, setPresetName] = useState('');
+  const [builderStep, setBuilderStep] = useState(1);
 
   // Load presets
   useEffect(() => {
@@ -155,13 +156,62 @@ function NewSessionInner() {
     if (presetConfig.session_config) setConfig(presetConfig.session_config);
   }
 
-  return (
-    <div className="max-w-3xl mx-auto">
-      <h2 className="dl-serif text-3xl mb-8" style={{ color: 'var(--text)' }}>New Session</h2>
+  const setupSteps = ['Briefing', 'Deliberators', 'Rules', 'Review'];
+  const readiness = [
+    { label: 'Briefing', value: briefingText.trim() ? 'Ready' : 'Missing', ok: Boolean(briefingText.trim()) },
+    { label: 'Deliberators', value: `${panelists.length} named`, ok: panelists.length >= 2 && panelists.every((p) => p.display_name.trim()) },
+    { label: 'Cost cap', value: `$${(config.cost_cap_cents / 100).toFixed(0)}`, ok: config.cost_cap_cents > 0 },
+    { label: 'Voting rule', value: config.approval_threshold.replace(/_/g, ' '), ok: true },
+  ];
 
-      <div className="space-y-6">
+  return (
+    <div className="mx-auto max-w-[1500px] space-y-7">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--accent)' }}>Guided builder</p>
+        <h2 className="dl-serif mt-2 text-4xl tracking-tight md:text-5xl" style={{ color: 'var(--text)' }}>New deliberation session</h2>
+        <p className="mt-3 max-w-3xl text-sm leading-6 md:text-base" style={{ color: 'var(--text-secondary)' }}>
+          Build the panel one step at a time. Deliberators will see each other by name, while backing models stay private.
+        </p>
+      </div>
+
+      <div className="grid gap-5 min-[1800px]:grid-cols-[260px_1fr_340px]">
+        <Card>
+          <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text)' }}>Setup steps</h3>
+          <div className="space-y-2">
+            {setupSteps.map((step, index) => {
+              const stepNumber = index + 1;
+              const active = builderStep === stepNumber;
+              const done = builderStep > stepNumber;
+              return (
+                <button
+                  key={step}
+                  type="button"
+                  onClick={() => setBuilderStep(stepNumber)}
+                  className="flex w-full items-center gap-3 rounded-md p-3 text-left transition"
+                  style={{
+                    background: active ? 'var(--accent-subtle)' : 'var(--surface-inset)',
+                    color: active ? 'var(--accent-text)' : 'var(--text-secondary)',
+                  }}
+                >
+                  <span
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold"
+                    style={{
+                      background: done ? 'var(--success)' : active ? 'var(--accent)' : 'var(--surface)',
+                      color: done || active ? '#fff' : 'var(--text-tertiary)',
+                    }}
+                  >
+                    {done ? '✓' : stepNumber}
+                  </span>
+                  <span className="text-sm font-semibold">{step}</span>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+
+        <div className="space-y-6">
         {/* Presets */}
-        {presets.length > 0 && (
+        {presets.length > 0 && builderStep === 1 && (
           <Card>
             <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Load Preset</h3>
             <div className="flex gap-2 flex-wrap">
@@ -183,60 +233,58 @@ function NewSessionInner() {
           </Card>
         )}
 
-        {/* Title */}
-        <Card>
-          <Input
-            label="Session Title"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="e.g., Q3 Investment Strategy Analysis"
-          />
-        </Card>
+        {builderStep === 1 && (
+          <>
+          <Card>
+            <Input
+              label="Session Title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="e.g., Q3 Investment Strategy Analysis"
+            />
+          </Card>
 
-        {/* Briefing */}
-        <Card>
-          <Textarea
-            label="Briefing"
-            value={briefingText}
-            onChange={(e) => setBriefingText(e.target.value)}
-            placeholder="Provide the topic, question, or document for the panelists to deliberate on..."
-            rows={8}
-          />
-          {chainFrom && (
-            <p className="text-xs mt-2" style={{ color: 'var(--accent)' }}>
-              Pre-filled from previous session resolution
-            </p>
-          )}
-        </Card>
+          <Card>
+            <Textarea
+              label="Briefing"
+              value={briefingText}
+              onChange={(e) => setBriefingText(e.target.value)}
+              placeholder="Provide the topic, question, or document for the deliberators to discuss..."
+              rows={8}
+            />
+            {chainFrom && (
+              <p className="text-xs mt-2" style={{ color: 'var(--accent)' }}>
+                Pre-filled from previous session resolution
+              </p>
+            )}
+          </Card>
 
-        {/* Briefing URLs */}
-        <Card>
-          <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Reference URLs (optional)</h3>
-          <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>Content will be fetched and included in the briefing context.</p>
-          {briefingUrls.map((url, i) => (
-            <div key={i} className="flex gap-2 mb-2">
-              <Input
-                value={url}
-                onChange={(e) => {
-                  const updated = [...briefingUrls];
-                  updated[i] = e.target.value;
-                  setBriefingUrls(updated);
-                }}
-                placeholder="https://example.com/article"
-                className="flex-1"
-              />
-              <Button variant="ghost" size="sm" onClick={() => setBriefingUrls(briefingUrls.filter((_, j) => j !== i))} style={{ color: 'var(--danger)' }}>
-                Remove
-              </Button>
-            </div>
-          ))}
-          <Button variant="secondary" size="sm" onClick={() => setBriefingUrls([...briefingUrls, ''])}>
-            + Add URL
-          </Button>
-        </Card>
+          <Card>
+            <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Reference URLs (optional)</h3>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>Content will be fetched and included in the briefing context.</p>
+            {briefingUrls.map((url, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <Input
+                  value={url}
+                  onChange={(e) => {
+                    const updated = [...briefingUrls];
+                    updated[i] = e.target.value;
+                    setBriefingUrls(updated);
+                  }}
+                  placeholder="https://example.com/article"
+                  className="flex-1"
+                />
+                <Button variant="ghost" size="sm" onClick={() => setBriefingUrls(briefingUrls.filter((_, j) => j !== i))} style={{ color: 'var(--danger)' }}>
+                  Remove
+                </Button>
+              </div>
+            ))}
+            <Button variant="secondary" size="sm" onClick={() => setBriefingUrls([...briefingUrls, ''])}>
+              + Add URL
+            </Button>
+          </Card>
 
-        {/* File Uploads */}
-        <Card>
+          <Card>
           <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>File Attachments (optional)</h3>
           <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>Upload PDFs, DOCX, or text files. Content will be extracted and included in the briefing.</p>
           <div
@@ -283,30 +331,32 @@ function NewSessionInner() {
               ))}
             </div>
           )}
-        </Card>
+          </Card>
+          </>
+        )}
 
         {/* Panelists */}
-        <Card>
+        {builderStep === 2 && <Card>
           <PanelistConfig panelists={panelists} onChange={setPanelists} />
-        </Card>
+        </Card>}
 
         {/* Settings */}
-        <Card>
+        {builderStep === 3 && <Card>
           <SessionSettings config={config} onChange={setConfig} panelists={panelists} />
-        </Card>
+        </Card>}
 
         {/* Tags */}
-        <Card>
+        {builderStep === 3 && <Card>
           <Input
             label="Tags (comma-separated)"
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="investment, strategy, technical"
           />
-        </Card>
+        </Card>}
 
         {/* Save Preset */}
-        <Card>
+        {builderStep === 3 && <Card>
           <h3 className="text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>Save as Preset</h3>
           <div className="flex gap-2">
             <Input
@@ -319,21 +369,57 @@ function NewSessionInner() {
               Save
             </Button>
           </div>
-        </Card>
+        </Card>}
+
+        {builderStep === 4 && (
+          <Card>
+            <h3 className="dl-serif text-2xl mb-4" style={{ color: 'var(--text)' }}>Ready check</h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {readiness.map((item) => (
+                <div key={item.label} className="rounded-md p-4" style={{ background: item.ok ? 'var(--success-subtle)' : 'var(--warning-subtle)' }}>
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em]" style={{ color: item.ok ? 'var(--success-text)' : 'var(--warning-text)' }}>{item.label}</p>
+                  <p className="mt-2 text-lg font-bold" style={{ color: 'var(--text)' }}>{item.value}</p>
+                </div>
+              ))}
+            </div>
+            <p className="mt-4 text-sm leading-6" style={{ color: 'var(--text-secondary)' }}>
+              The deliberators will see each other as {panelists.map((p) => p.display_name || 'Unnamed').join(', ')}. Backing model IDs are not included in deliberation prompts.
+            </p>
+          </Card>
+        )}
 
         {/* Cost Estimate & Launch */}
         <div className="flex items-center justify-between flex-wrap gap-3">
-          <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+          <Button variant="secondary" onClick={() => setBuilderStep(Math.max(1, builderStep - 1))} disabled={builderStep === 1}>
+            Back
+          </Button>
+          <Button onClick={() => builderStep < 4 ? setBuilderStep(builderStep + 1) : handleLaunch()} loading={isLaunching} size="lg">
+            {builderStep < 4 ? 'Continue' : 'Launch Deliberation'}
+          </Button>
+        </div>
+        </div>
+
+        <Card>
+          <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Launch confidence</h3>
+          <div className="mt-4 space-y-3">
+            {readiness.map((item) => (
+              <div key={item.label} className="flex items-center justify-between rounded-md p-3" style={{ background: 'var(--surface-inset)' }}>
+                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{item.label}</span>
+                <span className="text-sm font-semibold" style={{ color: item.ok ? 'var(--success)' : 'var(--warning)' }}>{item.value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-5 rounded-lg p-4" style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)' }}>
+            <p className="text-sm font-semibold">Plain-English summary</p>
+            <p className="mt-2 text-sm leading-6" style={{ color: 'var(--sidebar-text-muted)' }}>
+              {panelists.length} deliberators will analyze the briefing, discuss for up to {config.suggested_rounds} rounds, draft a resolution, and vote under a {config.approval_threshold.replace(/_/g, ' ')} rule.
+            </p>
+          </div>
+          <p className="mt-4 text-sm" style={{ color: 'var(--text-tertiary)' }}>
             Estimated cost: ~${estimatedCost}
           </p>
-
-          <div className="flex items-center gap-3">
-            {error && <p className="text-sm" style={{ color: 'var(--danger)' }}>{error}</p>}
-            <Button onClick={handleLaunch} loading={isLaunching} size="lg">
-              Launch Deliberation
-            </Button>
-          </div>
-        </div>
+          {error && <p className="mt-3 text-sm" style={{ color: 'var(--danger)' }}>{error}</p>}
+        </Card>
       </div>
     </div>
   );

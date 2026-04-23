@@ -12,7 +12,7 @@ async function checkAnthropic(): Promise<{ ok: boolean; error?: string; latencyM
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify({ model: 'claude-opus-4-6', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
+      body: JSON.stringify({ model: 'claude-opus-4-7', max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }),
     });
     const latencyMs = Date.now() - start;
     if (res.ok) return { ok: true, latencyMs };

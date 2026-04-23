@@ -43,7 +43,7 @@ export async function GET(
           return;
         }
 
-        const modelId = resolution.drafter_model_id || 'claude-opus-4-6';
+        const modelId = resolution.drafter_model_id || 'claude-opus-4-7';
         const drafterName = resolution.drafter_display_name || 'Drafter';
 
         send({ type: 'intervention_prompt', message: `Continuing truncated draft with ${drafterName}...` });

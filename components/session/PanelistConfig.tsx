@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
 import { Input, Textarea } from '@/components/ui/Input';
-import { MODEL_REGISTRY, AVATAR_COLORS } from '@/lib/openrouter/models';
+import { MODEL_REGISTRY, AVATAR_COLORS, DEFAULT_DELIBERATOR_NAMES } from '@/lib/openrouter/models';
 import type { PanelistConfig as PanelistConfigType } from '@/lib/db/types';
 
 type ModelStatus = { ok: boolean; error?: string; latencyMs: number };
@@ -36,7 +36,7 @@ export function PanelistConfig({ panelists, onChange }: Props) {
     onChange([
       ...panelists,
       {
-        display_name: model.name,
+        display_name: DEFAULT_DELIBERATOR_NAMES[panelists.length % DEFAULT_DELIBERATOR_NAMES.length],
         model_id: model.id,
         system_prompt: '',
         avatar_color: AVATAR_COLORS[panelists.length % AVATAR_COLORS.length],
@@ -98,10 +98,20 @@ export function PanelistConfig({ panelists, onChange }: Props) {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <h3 className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>Panelists ({panelists.length})</h3>
+        <div>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Deliberators ({panelists.length})</h3>
+            <span className="rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.1em]" style={{ background: 'var(--accent-subtle)', color: 'var(--accent-text)' }}>
+              Blind identities
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-5" style={{ color: 'var(--text-tertiary)' }}>
+            Deliberators see names only. Backing models stay private to the app.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={checkModels}
@@ -112,95 +122,102 @@ export function PanelistConfig({ panelists, onChange }: Props) {
           >
             {checking ? 'checking...' : 'test connections'}
           </button>
+          <Button variant="secondary" size="sm" onClick={addPanelist}>
+            + Add
+          </Button>
         </div>
-        <Button variant="secondary" size="sm" onClick={addPanelist}>
-          + Add Panelist
-        </Button>
       </div>
 
       {panelists.map((panelist, index) => (
         <div
           key={index}
-          className="p-4 space-y-3"
+          className="p-4 space-y-4"
           style={{
             border: '1px solid var(--border)',
             borderRadius: 'var(--radius-lg)',
+            background: 'var(--surface)',
           }}
         >
-          <div className="flex items-center gap-3">
+          <div className="grid gap-3">
             {/* Avatar color */}
-            <button
-              type="button"
-              className="w-8 h-8 rounded-full shrink-0 ring-2 ring-offset-1"
-              style={{
-                backgroundColor: panelist.avatar_color,
-                outline: '2px solid var(--border)',
-                outlineOffset: '2px',
-              }}
-              onClick={() => {
-                const nextColor = AVATAR_COLORS[(AVATAR_COLORS.indexOf(panelist.avatar_color) + 1) % AVATAR_COLORS.length];
-                updatePanelist(index, { avatar_color: nextColor });
-              }}
-              title="Click to change color"
-            />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="h-10 w-10 shrink-0 rounded-full text-sm font-bold text-white"
+                style={{
+                  backgroundColor: panelist.avatar_color,
+                  outline: '2px solid var(--border)',
+                  outlineOffset: '2px',
+                }}
+                onClick={() => {
+                  const nextColor = AVATAR_COLORS[(AVATAR_COLORS.indexOf(panelist.avatar_color) + 1) % AVATAR_COLORS.length];
+                  updatePanelist(index, { avatar_color: nextColor });
+                }}
+                title="Click to change color"
+              >
+                {panelist.display_name.charAt(0) || '?'}
+              </button>
+              <StatusDot modelId={panelist.model_id} />
+            </div>
 
-            {/* Status dot */}
-            <StatusDot modelId={panelist.model_id} />
+            <div className="grid gap-3">
+              <Input
+                label="Public name"
+                value={panelist.display_name}
+                onChange={(e) => updatePanelist(index, { display_name: e.target.value })}
+                placeholder="e.g., Mary Sotheby"
+              />
 
-            {/* Display name */}
-            <Input
-              value={panelist.display_name}
-              onChange={(e) => updatePanelist(index, { display_name: e.target.value })}
-              placeholder="Display name"
-              className="flex-1"
-            />
+              <div>
+                <label className="block text-sm font-medium mb-1.5" style={{ color: 'var(--text-secondary)' }}>
+                  Private backing model
+                </label>
+                <select
+                  value={panelist.model_id}
+                  onChange={(e) => updatePanelist(index, { model_id: e.target.value })}
+                  className="w-full px-3 py-2 text-sm"
+                  style={selectStyle}
+                >
+                  {MODEL_REGISTRY.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
-            {/* Model selector */}
-            <select
-              value={panelist.model_id}
-              onChange={(e) => updatePanelist(index, { model_id: e.target.value })}
-              className="px-3 py-2 text-sm"
-              style={selectStyle}
-            >
-              {MODEL_REGISTRY.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Expand/collapse system prompt */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
-            >
-              {expandedIndex === index ? 'Hide' : 'Prompt'}
-            </Button>
-
-            {/* Remove button */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => removePanelist(index)}
-              disabled={panelists.length <= 2}
-              style={{ color: 'var(--danger)' }}
-            >
-              Remove
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setExpandedIndex(expandedIndex === index ? null : index)}
+              >
+                {expandedIndex === index ? 'Hide prompt' : 'Prompt'}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removePanelist(index)}
+                disabled={panelists.length <= 2}
+                style={{ color: 'var(--danger)' }}
+              >
+                Remove
+              </Button>
+            </div>
           </div>
 
           {/* Error message if connection failed */}
           {modelStatus[panelist.model_id] && !modelStatus[panelist.model_id].ok && (
-            <p className="text-xs pl-14" style={{ color: 'var(--danger)' }}>
+            <p className="text-xs" style={{ color: 'var(--danger)' }}>
               {modelStatus[panelist.model_id].error}
             </p>
           )}
 
           {/* Latency if connected */}
           {modelStatus[panelist.model_id]?.ok && (
-            <p className="text-xs pl-14" style={{ color: 'var(--success)' }}>
-              Connected ({modelStatus[panelist.model_id].latencyMs}ms)
+            <p className="text-xs" style={{ color: 'var(--success)' }}>
+              Private model connected ({modelStatus[panelist.model_id].latencyMs}ms)
             </p>
           )}
 

@@ -7,7 +7,7 @@
 - [x] **FOUND-03**: Full database migration `supabase/migrations/001_initial_schema.sql` — all 9 tables, RLS + permissive policies, `updated_at` trigger, indexes.
 - [x] **FOUND-04**: UI primitives — Button (variants/sizes/loading), Card, Input/Textarea, Badge/StatusBadge. App layout with sidebar nav.
 - [x] **FOUND-05**: OpenRouter client `lib/openrouter/client.ts` — streaming (AsyncGenerator<StreamChunk>) and non-streaming modes, SSE line-by-line parsing, reasoning token handling, retry with exponential backoff.
-- [x] **FOUND-06**: Model registry `lib/openrouter/models.ts` — Claude Opus 4.6, GPT-5.4, Gemini 3.1 Pro with pricing and context windows. `getModelById()`, `getDefaultPanelists()`.
+- [x] **FOUND-06**: Model registry `lib/openrouter/models.ts` — Claude Opus 4.7, GPT-5.4, Gemini 3.1 Pro with pricing and context windows. `getModelById()`, `getDefaultPanelists()`.
 - [x] **FOUND-07**: Cost tracker `lib/costs/tracker.ts` — `logCost()`, `updateSessionTotalCost()`, `getSessionCost()`, `checkCostCap()`.
 - [x] **FOUND-08**: Prompt templates `lib/deliberation/prompts.ts` — analysis, discussion, drafter election, drafting, voting prompts with template parameters.
 

@@ -3,8 +3,8 @@ import type { PanelistConfig } from '@/lib/db/types';
 
 export const MODEL_REGISTRY: ModelDefinition[] = [
   {
-    id: 'claude-opus-4-6',
-    name: 'Claude Opus 4.6',
+    id: 'claude-opus-4-7',
+    name: 'Claude Opus 4.7',
     provider: 'anthropic',
     inputPricePerMTok: 5,
     outputPricePerMTok: 25,
@@ -42,13 +42,26 @@ const AVATAR_COLORS = [
   '#ef4444', '#22c55e', '#3b82f6', '#f97316', '#06b6d4',
 ];
 
+const DEFAULT_DELIBERATOR_NAMES = [
+  'John Edwards',
+  'Mary Sotheby',
+  'Rafael Kim',
+  'Anika Rao',
+  'Thomas Bell',
+  'Elena Morgan',
+  'Priya Shah',
+  'Marcus Lee',
+  'Nora Bennett',
+  'Samuel Ortiz',
+];
+
 export function getModelById(id: string): ModelDefinition | undefined {
   return MODEL_REGISTRY.find((m) => m.id === id);
 }
 
 export function getDefaultPanelists(): PanelistConfig[] {
   return MODEL_REGISTRY.map((model, i) => ({
-    display_name: model.name,
+    display_name: DEFAULT_DELIBERATOR_NAMES[i % DEFAULT_DELIBERATOR_NAMES.length],
     model_id: model.id,
     system_prompt: '',
     avatar_color: AVATAR_COLORS[i % AVATAR_COLORS.length],
@@ -57,4 +70,4 @@ export function getDefaultPanelists(): PanelistConfig[] {
   }));
 }
 
-export { AVATAR_COLORS };
+export { AVATAR_COLORS, DEFAULT_DELIBERATOR_NAMES };

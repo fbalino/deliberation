@@ -30,7 +30,7 @@ function buildBody(params: CallModelParams, stream: boolean) {
   if (params.temperature !== undefined) {
     body.temperature = params.temperature;
   }
-  // Always enable adaptive thinking for Opus 4.6
+  // Always enable adaptive thinking for Opus 4.7
   body.thinking = { type: 'adaptive' };
 
   return body;

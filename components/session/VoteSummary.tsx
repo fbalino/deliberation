@@ -48,6 +48,7 @@ export function VoteSummary({ votes }: Props) {
       <div className="space-y-3">
         {votes.map((vote) => {
           const config = VERDICT_CONFIG[vote.verdict];
+          const approves = vote.verdict === 'approve' || vote.verdict === 'approve_with_amendments';
           return (
             <div
               key={vote.panelistId}
@@ -66,6 +67,17 @@ export function VoteSummary({ votes }: Props) {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-sm font-medium" style={{ color: 'var(--text)' }}>{vote.panelistName}</span>
+                  <span
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold"
+                    style={{
+                      background: approves ? 'var(--success)' : 'var(--danger)',
+                      color: '#fff',
+                    }}
+                    aria-label={approves ? 'Approve' : 'Reject'}
+                    title={approves ? 'Approve' : 'Reject'}
+                  >
+                    {approves ? '↑' : '↓'}
+                  </span>
                   <Badge variant={config.variant}>{config.label}</Badge>
                 </div>
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{vote.reasoning}</p>

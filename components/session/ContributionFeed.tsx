@@ -55,6 +55,19 @@ const PHASE_SHORT: Record<string, string> = {
   voting: 'Vote',
 };
 
+function activityForColumn(col: PanelistColumn) {
+  if (col.entries.some((e) => e.isThinkingStreaming)) return { label: 'Thinking', color: 'var(--purple)' };
+  if (col.entries.some((e) => e.isStreaming)) return { label: 'Speaking', color: 'var(--success)' };
+  if (col.entries.length > 0) return { label: 'Listening', color: 'var(--info)' };
+  return { label: 'Waiting', color: 'var(--text-tertiary)' };
+}
+
+function verdictIcon(verdict: string) {
+  if (verdict === 'reject') return '↓';
+  if (verdict === 'approve' || verdict === 'approve_with_amendments') return '↑';
+  return null;
+}
+
 /** Detect if content is JSON (like vote or election responses) and render it nicely */
 function JsonCard({ content }: { content: string }) {
   const trimmed = content.trim();
@@ -93,15 +106,27 @@ function JsonCard({ content }: { content: string }) {
             </div>
             <div className="px-3 py-2 flex-1 text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
               {isVerdict ? (
-                <span
-                  className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
-                  style={{
-                    background: verdictBadge[strValue].bg,
-                    color: verdictBadge[strValue].text,
-                    border: `1px solid ${verdictBadge[strValue].border}`,
-                  }}
-                >
-                  {strValue.replace(/_/g, ' ')}
+                <span className="inline-flex items-center gap-1.5">
+                  <span
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold"
+                    style={{
+                      background: verdictBadge[strValue].text,
+                      color: 'var(--surface)',
+                    }}
+                    aria-hidden="true"
+                  >
+                    {verdictIcon(strValue)}
+                  </span>
+                  <span
+                    className="inline-block px-2 py-0.5 rounded-full text-xs font-semibold"
+                    style={{
+                      background: verdictBadge[strValue].bg,
+                      color: verdictBadge[strValue].text,
+                      border: `1px solid ${verdictBadge[strValue].border}`,
+                    }}
+                  >
+                    {strValue.replace(/_/g, ' ')}
+                  </span>
                 </span>
               ) : (
                 strValue
@@ -226,6 +251,9 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
 
       <div ref={columnsRef} className="flex-1 grid gap-3 min-h-0" style={{ gridTemplateColumns: `repeat(${columns.length}, 1fr)` }}>
       {columns.map((col) => (
+        (() => {
+          const activity = activityForColumn(col);
+          return (
         <div
           key={col.panelistId}
           className="flex flex-col overflow-hidden min-h-0"
@@ -237,22 +265,28 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
         >
           {/* Column header */}
           <div
-            className="flex items-center gap-2 px-3 py-2.5 shrink-0"
+            className="px-3 py-3 shrink-0"
             style={{ borderBottom: '1px solid var(--border)', background: 'var(--surface-inset)' }}
           >
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-              style={{ backgroundColor: col.panelistColor }}
-            >
-              {col.panelistName.charAt(0)}
+            <div className="flex items-center gap-2">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
+                style={{ backgroundColor: col.panelistColor }}
+              >
+                {col.panelistName.charAt(0)}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{col.panelistName}</div>
+                <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>Private model: {col.modelId}</div>
+              </div>
+              <span
+                className="ml-auto inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.1em]"
+                style={{ background: 'var(--surface)', color: activity.color }}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${activity.label === 'Speaking' || activity.label === 'Thinking' ? 'animate-pulse' : ''}`} style={{ background: activity.color }} />
+                {activity.label}
+              </span>
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-semibold truncate" style={{ color: 'var(--text)' }}>{col.panelistName}</div>
-              <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{col.modelId}</div>
-            </div>
-            {col.entries.some((e) => e.isStreaming) && (
-              <span className="ml-auto inline-block w-2 h-2 rounded-full animate-pulse shrink-0" style={{ background: 'var(--success)' }} />
-            )}
           </div>
 
           {/* Column body */}
@@ -293,6 +327,8 @@ export function ContributionFeed({ rounds, panelistIds, panelistMap, filterPhase
             )}
           </div>
         </div>
+          );
+        })()
       ))}
     </div>
     </div>

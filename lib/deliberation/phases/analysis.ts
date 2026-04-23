@@ -48,6 +48,7 @@ async function analyzeWithPanelist(
 
   const { system, user } = analysisPrompt({
     briefing: session.briefing_text || '',
+    panelistName: panelist.display_name,
     panelistSystemPrompt: panelist.system_prompt || undefined,
     previousAnalyses,
   });

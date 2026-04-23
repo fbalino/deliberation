@@ -27,7 +27,7 @@ Default roster (user can change per session):
 
 | Model | OpenRouter ID | Input/Output per MTok |
 |---|---|---|
-| Claude Opus 4.6 | `anthropic/claude-opus-4-6` | $5 / $25 |
+| Claude Opus 4.7 | `anthropic/claude-opus-4-7` | $5 / $25 |
 | GPT-5.4 | `openai/gpt-5.4` | $2.50 / $15 |
 | Gemini 3.1 Pro | `google/gemini-3.1-pro-preview` | $2 / $12 |
 
@@ -210,7 +210,7 @@ Before launching a deliberation, the user configures:
 
 | Setting | Default | Options |
 |---|---|---|
-| Panelists | Claude Opus 4.6, GPT-5.4, Gemini 3.1 Pro | Pick 2–7+ from roster, add custom personas |
+| Panelists | Claude Opus 4.7, GPT-5.4, Gemini 3.1 Pro | Pick 2–7+ from roster, add custom personas |
 | Persona prompts | Neutral defaults | Editable per panelist |
 | Analysis mode | Blind | Blind / Open |
 | Discussion turn order | Simultaneous | Simultaneous / Sequential |

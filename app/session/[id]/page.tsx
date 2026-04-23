@@ -281,19 +281,18 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
   })();
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
+    <div className="mx-auto flex h-[calc(100vh-4rem)] max-w-[1600px] flex-col">
       {/* Top bar */}
-      <div className="flex items-start justify-between pb-3 mb-3 gap-4" style={{ borderBottom: '1px solid var(--border)' }}>
+      <div
+        className="mb-3 flex flex-col gap-4 rounded-xl p-4 xl:flex-row xl:items-center xl:justify-between"
+        style={{ border: '1px solid var(--border)', background: 'var(--surface)', boxShadow: 'var(--shadow-sm)' }}
+      >
         {/* Left: session info counter */}
-        <div className="flex items-center gap-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
           {/* Round counter */}
           <div
             className="flex items-center gap-3 px-4 py-2.5"
-            style={{
-              background: 'var(--sidebar-bg)',
-              color: 'var(--sidebar-text)',
-              borderRadius: 'var(--radius-lg)',
-            }}
+            style={{ background: 'var(--sidebar-bg)', color: 'var(--sidebar-text)', borderRadius: 'var(--radius-lg)' }}
           >
             <div>
               <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--sidebar-text-muted)' }}>Phase</div>
@@ -332,7 +331,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
           {/* Title + status + actions */}
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="dl-serif text-lg truncate max-w-xs" style={{ color: 'var(--text)' }}>{sessionTitle}</h2>
+              <h2 className="dl-serif text-2xl truncate max-w-lg" style={{ color: 'var(--text)' }}>{sessionTitle}</h2>
               <StatusBadge status={state.phase} />
               <a
                 href={`/new?fork_from=${sessionId}`}
@@ -386,7 +385,7 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
               )}
             </div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-              {panelists.length} panelists
+              {panelists.length} deliberators · backing models are private to the app
             </div>
           </div>
         </div>

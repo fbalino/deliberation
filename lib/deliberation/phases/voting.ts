@@ -102,6 +102,7 @@ export async function runVotingPhase(
           analyses: '',
           discussionTranscript: '',
           draftContent: resolution.content_markdown,
+          panelistName: panelist.display_name,
         });
 
         try {
@@ -236,6 +237,7 @@ export async function runVotingPhase(
       briefing: session.briefing_text || '',
       analyses: '',
       discussionTranscript: `Previous draft:\n${resolution.content_markdown}\n\nAmendments requested:\n${amendmentText}`,
+      panelistName: drafter.display_name,
     });
 
     try {

@@ -84,6 +84,7 @@ export async function runDiscussionPhase(
           analyses: analysesText,
           discussionTranscript: discussionTranscript + (currentRoundTranscript ? `\n--- Round ${roundNum} (in progress) ---\n${currentRoundTranscript}` : ''),
           roundNumber: roundNum,
+          panelistName: panelist.display_name,
           nudge: interventions.nudge || undefined,
           panelistSystemPrompt: panelist.system_prompt || undefined,
         });
@@ -135,6 +136,7 @@ export async function runDiscussionPhase(
             analyses: analysesText,
             discussionTranscript,
             roundNumber: roundNum,
+            panelistName: panelist.display_name,
             nudge: interventions.nudge || undefined,
             panelistSystemPrompt: panelist.system_prompt || undefined,
           });

@@ -1,14 +1,17 @@
 export function analysisPrompt(params: {
   briefing: string;
+  panelistName: string;
   panelistSystemPrompt?: string;
   previousAnalyses?: string;
 }): { system: string; user: string } {
-  const system = params.panelistSystemPrompt ||
+  const identity = `You are participating under the deliberator name "${params.panelistName}". Other deliberators are identified only by their chosen names. Do not refer to, infer, or speculate about model providers, model names, or technical model identity.`;
+  const baseSystem = params.panelistSystemPrompt ||
     `You are an independent analyst participating in a structured deliberation.
 Read the briefing material carefully and produce a thorough analysis.
 Identify key issues, risks, opportunities, and recommendations.
 Be specific and evidence-based. You will later discuss your findings
 with other analysts and must be prepared to defend your positions.`;
+  const system = `${identity}\n\n${baseSystem}`;
 
   let user = `Here is the briefing material for your analysis:\n\n${params.briefing}`;
 
@@ -24,11 +27,14 @@ export function discussionPrompt(params: {
   analyses: string;
   discussionTranscript: string;
   roundNumber: number;
+  panelistName: string;
   nudge?: string;
   panelistSystemPrompt?: string;
 }): { system: string; user: string } {
-  const system = params.panelistSystemPrompt ||
+  const identity = `You are participating under the deliberator name "${params.panelistName}". Other deliberators are identified only by their chosen names. Do not refer to, infer, or speculate about model providers, model names, or technical model identity.`;
+  const baseSystem = params.panelistSystemPrompt ||
     'You are participating in a structured deliberation with other analysts.';
+  const system = `${identity}\n\n${baseSystem}`;
 
   let user = `You are participating in round ${params.roundNumber} of a structured deliberation.
 
@@ -61,8 +67,9 @@ export function drafterElectionPrompt(params: {
   analyses: string;
   discussionTranscript: string;
   panelistNames: string[];
+  panelistName: string;
 }): { system: string; user: string } {
-  const system = 'You are voting on which analyst should draft the resolution document.';
+  const system = `You are participating under the deliberator name "${params.panelistName}". You are voting on which analyst should draft the resolution document. Other deliberators are identified only by their chosen names. Do not refer to, infer, or speculate about model providers, model names, or technical model identity.`;
 
   const nameList = params.panelistNames.map((n) => `- ${n}`).join('\n');
 
@@ -87,8 +94,9 @@ export function draftingPrompt(params: {
   briefing: string;
   analyses: string;
   discussionTranscript: string;
+  panelistName: string;
 }): { system: string; user: string } {
-  const system = 'You have been selected to draft the resolution document for this deliberation.';
+  const system = `You are participating under the deliberator name "${params.panelistName}". You have been selected to draft the resolution document for this deliberation. Other deliberators are identified only by their chosen names. Do not refer to, infer, or speculate about model providers, model names, or technical model identity.`;
 
   const user = `Here is the complete record:
 
@@ -117,8 +125,9 @@ export function votingPrompt(params: {
   analyses: string;
   discussionTranscript: string;
   draftContent: string;
+  panelistName: string;
 }): { system: string; user: string } {
-  const system = 'You are reviewing a draft resolution document and casting your vote.';
+  const system = `You are participating under the deliberator name "${params.panelistName}". You are reviewing a draft resolution document and casting your vote. Other deliberators are identified only by their chosen names. Do not refer to, infer, or speculate about model providers, model names, or technical model identity.`;
 
   const user = `Review the following draft resolution:
 
