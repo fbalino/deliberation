@@ -226,7 +226,10 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
     };
     es.onerror = () => {};
     return () => es.close();
-  }, [sessionId, loading, state.phase]);
+    // Keep one stream connection for the session. Reconnecting on every phase
+    // change can detach the live engine and accidentally restart work.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, loading]);
 
   useEffect(() => {
     const isActive = !['completed', 'abandoned', 'configuring'].includes(state.phase);

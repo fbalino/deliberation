@@ -65,6 +65,19 @@ export async function GET(
           return;
         }
 
+        // Only the launch state is allowed to start the engine. Active phases
+        // can reconnect to an existing bus, but must never start a fresh engine
+        // from analysis again.
+        if (dbSession.status !== 'briefing') {
+          await sendHistoricalEvents(sessionId, send);
+          send({
+            type: 'intervention_prompt',
+            message: `Session is already in '${dbSession.status}' and no live engine is attached. Not starting a duplicate run.`,
+          });
+          controller.close();
+          return;
+        }
+
         // Start the engine inline — this keeps the SSE connection alive
         sessionBus.create(sessionId);
         sessionBus.setRunning(sessionId, true);
