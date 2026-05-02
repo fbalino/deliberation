@@ -14,6 +14,17 @@ export const MODEL_REGISTRY: ModelDefinition[] = [
     supportsReasoning: true,
   },
   {
+    id: 'gpt-5.5',
+    name: 'GPT-5.5',
+    provider: 'openai',
+    inputPricePerMTok: 2.5,
+    outputPricePerMTok: 15,
+    contextWindow: 1050000,
+    maxOutputTokens: 128000,
+    supportsVision: true,
+    supportsReasoning: true,
+  },
+  {
     id: 'gpt-5.4',
     name: 'GPT-5.4',
     provider: 'openai',
@@ -60,7 +71,15 @@ export function getModelById(id: string): ModelDefinition | undefined {
 }
 
 export function getDefaultPanelists(): PanelistConfig[] {
-  return MODEL_REGISTRY.map((model, i) => ({
+  const seen = new Set<string>();
+  const oneModelPerProvider: ModelDefinition[] = [];
+  for (const model of MODEL_REGISTRY) {
+    if (seen.has(model.provider)) continue;
+    seen.add(model.provider);
+    oneModelPerProvider.push(model);
+  }
+
+  return oneModelPerProvider.map((model, i) => ({
     display_name: DEFAULT_DELIBERATOR_NAMES[i % DEFAULT_DELIBERATOR_NAMES.length],
     model_id: model.id,
     system_prompt: '',
