@@ -1,4 +1,6 @@
 export async function extractText(buffer: Buffer, mimeType: string, fileName: string): Promise<string> {
+  const lowerName = fileName.toLowerCase();
+
   if (mimeType === 'application/pdf') {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const pdfParse = require('pdf-parse') as (buf: Buffer) => Promise<{ text: string }>;
@@ -12,7 +14,13 @@ export async function extractText(buffer: Buffer, mimeType: string, fileName: st
     return result.value || `[DOCX: ${fileName} — no extractable text]`;
   }
 
-  if (mimeType.startsWith('text/')) {
+  if (
+    mimeType.startsWith('text/') ||
+    lowerName.endsWith('.md') ||
+    lowerName.endsWith('.markdown') ||
+    lowerName.endsWith('.txt') ||
+    lowerName.endsWith('.csv')
+  ) {
     return buffer.toString('utf-8');
   }
 
