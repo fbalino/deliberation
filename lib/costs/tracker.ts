@@ -1,6 +1,25 @@
 import { insertCostLog, incrementSessionCost, getSessionCost as dbGetSessionCost } from '@/lib/db/queries';
 import type { Phase, TokenUsage } from '@/lib/db/types';
 
+/**
+ * Thrown when a session has reached or exceeded its cost cap.
+ * The engine treats this as a graceful stop (the session is paused, not abandoned),
+ * preserving all work already paid for.
+ */
+export class BudgetExceededError extends Error {
+  readonly currentCostCents: number;
+  readonly capCents: number;
+
+  constructor(currentCostCents: number, capCents: number) {
+    super(
+      `Cost cap reached: $${(currentCostCents / 100).toFixed(2)} >= $${(capCents / 100).toFixed(2)}`
+    );
+    this.name = 'BudgetExceededError';
+    this.currentCostCents = currentCostCents;
+    this.capCents = capCents;
+  }
+}
+
 export async function logCost(params: {
   sessionId: string;
   panelistId: string;
@@ -39,4 +58,16 @@ export async function checkCostCap(
     currentCostCents,
     remainingCents: Math.max(0, capCents - currentCostCents),
   };
+}
+
+/**
+ * Hard guard called before every model call. If the session has spent the
+ * cap, throw BudgetExceededError so the engine stops cleanly *before* the
+ * next call begins — not after another expensive round.
+ */
+export async function assertWithinBudget(sessionId: string, capCents: number): Promise<void> {
+  const current = await getSessionCost(sessionId);
+  if (current >= capCents) {
+    throw new BudgetExceededError(current, capCents);
+  }
 }

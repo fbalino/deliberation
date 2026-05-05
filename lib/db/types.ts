@@ -18,6 +18,15 @@ export type Phase =
   | 'drafting'
   | 'voting';
 
+/**
+ * Engine health, separate from session.status (which tracks the *phase*).
+ *   - idle: no engine running. Safe to start one.
+ *   - running: an engine is running and writing heartbeats.
+ *   - paused: an engine errored on a transient failure; partial work is
+ *     preserved and the session can be resumed.
+ */
+export type EngineStatus = 'idle' | 'running' | 'paused';
+
 export type InterventionType =
   | 'pause'
   | 'resume'
@@ -92,6 +101,10 @@ export interface DbSession {
   total_cost_cents: number;
   created_at: string;
   updated_at: string;
+  engine_status: EngineStatus;
+  engine_started_at: string | null;
+  engine_heartbeat_at: string | null;
+  engine_error: string | null;
 }
 
 export interface DbPanelist {

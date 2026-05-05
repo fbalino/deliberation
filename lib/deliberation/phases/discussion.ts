@@ -1,7 +1,7 @@
 import { listRounds, listContributionsForRounds, insertRound, insertContribution, getSession } from '@/lib/db/queries';
 import type { DbPanelist, DbSession, SessionConfig, SSEEvent, TokenUsage } from '@/lib/db/types';
 import { callModelStream } from '@/lib/openrouter/client';
-import { logCost } from '@/lib/costs/tracker';
+import { assertWithinBudget, logCost } from '@/lib/costs/tracker';
 import { discussionPrompt } from '@/lib/deliberation/prompts';
 import { detectConsensus } from '@/lib/deliberation/consensus';
 import { contextManager } from '@/lib/deliberation/context-manager';
@@ -26,8 +26,57 @@ export async function runDiscussionPhase(
 
   let discussionTranscript = '';
   const aiPanelists = panelists.filter((p) => !p.is_human);
+  const capCents = config.cost_cap_cents;
 
-  for (let roundNum = 1; roundNum <= config.suggested_rounds; roundNum++) {
+  // ---- Resume support ----
+  // Replay completed discussion rounds for the UI and rebuild the transcript
+  // so model prompts contain prior context. Skip those rounds; start the loop
+  // at the first round that doesn't have all panelists.
+  const existingDiscussionRounds = await listRounds(sessionId, ['discussion']);
+  let resumeFromRound = 1;
+  if (existingDiscussionRounds.length > 0) {
+    const allDiscussionContribs = await listContributionsForRounds(
+      existingDiscussionRounds.map((r) => r.id)
+    );
+    const byRound = new Map<string, typeof allDiscussionContribs>();
+    for (const c of allDiscussionContribs) {
+      const arr = byRound.get(c.round_id) || [];
+      arr.push(c);
+      byRound.set(c.round_id, arr);
+    }
+
+    for (const round of existingDiscussionRounds) {
+      const contribs = byRound.get(round.id) || [];
+      const completed = new Set(contribs.map((c) => c.panelist_id));
+      const allDone = aiPanelists.every((p) => completed.has(p.id));
+      if (!allDone) {
+        // First incomplete round — resume from here. Don't replay it; the
+        // loop below will create a fresh round_number for the rerun.
+        break;
+      }
+      // Round is complete: replay events for the UI and rebuild transcript.
+      emit({ type: 'round_start', round: round.round_number, phase: 'discussion' });
+      discussionTranscript += `\n--- Round ${round.round_number} ---\n`;
+      for (const c of contribs) {
+        const p = panelists.find((pp) => pp.id === c.panelist_id);
+        emit({ type: 'contribution_start', panelistId: c.panelist_id, panelistName: p?.display_name || 'Unknown' });
+        emit({ type: 'contribution_chunk', panelistId: c.panelist_id, text: c.content, isThinking: false });
+        emit({
+          type: 'contribution_end',
+          panelistId: c.panelist_id,
+          tokenUsage: c.token_usage || {
+            input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cached_tokens: 0, cost_cents: 0,
+          },
+        });
+        discussionTranscript += `[${p?.display_name || 'Unknown'}]:\n${c.content}\n\n`;
+      }
+      resumeFromRound = round.round_number + 1;
+    }
+  }
+
+  for (let roundNum = resumeFromRound; roundNum <= config.suggested_rounds; roundNum++) {
+    // Hard cost guard — fail before the next round begins, not after.
+    await assertWithinBudget(sessionId, capCents);
     const interventions = await checkInterventions();
 
     if (interventions.forceAdvance) {
@@ -76,6 +125,9 @@ export async function runDiscussionPhase(
       let currentRoundTranscript = '';
 
       for (const panelist of aiPanelists) {
+        // Re-check before each sequential speaker — early panelists may have
+        // already pushed us past the cap.
+        await assertWithinBudget(sessionId, capCents);
         emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
         // Build prompt with previous speakers' responses from THIS round included
@@ -129,6 +181,7 @@ export async function runDiscussionPhase(
       // All panelists respond at the same time, can't see each other mid-round
       await Promise.all(
         aiPanelists.map(async (panelist) => {
+          await assertWithinBudget(sessionId, capCents);
           emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
           const { system, user } = discussionPrompt({

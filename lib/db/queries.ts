@@ -130,6 +130,81 @@ export async function deleteSession(id: string, client: Queryable = sql): Promis
 }
 
 // ============================================================
+// Engine lifecycle (heartbeat / lock / pause)
+// ============================================================
+
+/** Heartbeats older than this are considered stale — the lock can be taken. */
+export const ENGINE_STALE_AFTER_SECONDS = 60;
+
+/**
+ * Atomic engine lock. Returns true if the caller now owns the engine for this
+ * session. Only succeeds if no engine is currently running, OR the existing
+ * engine's heartbeat is older than ENGINE_STALE_AFTER_SECONDS (crash recovery).
+ *
+ * This is the only safe way for parallel function instances / tabs to avoid
+ * starting the same engine twice.
+ */
+export async function tryAcquireEngineLock(
+  sessionId: string, client: Queryable = sql
+): Promise<boolean> {
+  const { rows } = await q(client)`
+    UPDATE sessions
+       SET engine_status = 'running',
+           engine_started_at = NOW(),
+           engine_heartbeat_at = NOW(),
+           engine_error = NULL
+     WHERE id = ${sessionId}
+       AND (engine_status = 'idle'
+            OR engine_heartbeat_at IS NULL
+            OR engine_heartbeat_at < NOW() - (${ENGINE_STALE_AFTER_SECONDS} || ' seconds')::interval)
+    RETURNING id`;
+  return rows.length > 0;
+}
+
+export async function setEngineHeartbeat(
+  sessionId: string, client: Queryable = sql
+): Promise<void> {
+  await q(client)`
+    UPDATE sessions
+       SET engine_heartbeat_at = NOW()
+     WHERE id = ${sessionId}
+       AND engine_status = 'running'`;
+}
+
+export async function setEnginePaused(
+  sessionId: string, errorMessage: string, client: Queryable = sql
+): Promise<void> {
+  await q(client)`
+    UPDATE sessions
+       SET engine_status = 'paused',
+           engine_error = ${errorMessage}
+     WHERE id = ${sessionId}`;
+}
+
+export async function setEngineIdle(
+  sessionId: string, client: Queryable = sql
+): Promise<void> {
+  await q(client)`
+    UPDATE sessions
+       SET engine_status = 'idle',
+           engine_error = NULL
+     WHERE id = ${sessionId}`;
+}
+
+/** True if engine_heartbeat_at is older than ENGINE_STALE_AFTER_SECONDS. */
+export async function isEngineStalled(
+  sessionId: string, client: Queryable = sql
+): Promise<boolean> {
+  const { rows } = await q(client)`
+    SELECT engine_status = 'running'
+       AND (engine_heartbeat_at IS NULL
+            OR engine_heartbeat_at < NOW() - (${ENGINE_STALE_AFTER_SECONDS} || ' seconds')::interval)
+       AS stalled
+      FROM sessions WHERE id = ${sessionId}`;
+  return Boolean(rows[0]?.stalled);
+}
+
+// ============================================================
 // Panelists
 // ============================================================
 

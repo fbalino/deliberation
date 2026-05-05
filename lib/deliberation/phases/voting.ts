@@ -1,12 +1,13 @@
 import {
   getResolution, insertRound, insertContribution,
   markResolutionApproved, updateResolution, insertResolution,
+  getApprovedResolution,
 } from '@/lib/db/queries';
 import type {
   DbPanelist, DbSession, SessionConfig, SSEEvent, VoteData, VoteVerdict, ApprovalThreshold,
 } from '@/lib/db/types';
 import { callModelComplete } from '@/lib/openrouter/client';
-import { logCost } from '@/lib/costs/tracker';
+import { assertWithinBudget, logCost } from '@/lib/costs/tracker';
 import { votingPrompt, draftingPrompt } from '@/lib/deliberation/prompts';
 
 function tallyVotes(votes: VoteData[], threshold: ApprovalThreshold, panelistCount: number, customRatio?: { required: number; total: number }): boolean {
@@ -77,8 +78,18 @@ export async function runVotingPhase(
 ): Promise<string> {
   const aiPanelists = panelists.filter((p) => !p.is_human);
   let currentResolutionId = resolutionId;
+  const capCents = config.cost_cap_cents;
+
+  // Resume short-circuit: if a resolution is already approved, we're done.
+  const alreadyApproved = await getApprovedResolution(sessionId);
+  if (alreadyApproved) {
+    return alreadyApproved.id;
+  }
 
   for (let iteration = 1; iteration <= config.max_draft_iterations; iteration++) {
+    // Hard cost guard at the top of each voting iteration.
+    await assertWithinBudget(sessionId, capCents);
+
     // Load current draft
     const resolution = await getResolution(currentResolutionId);
     if (!resolution) throw new Error('Resolution not found');
@@ -95,6 +106,9 @@ export async function runVotingPhase(
 
     await Promise.all(
       aiPanelists.map(async (panelist) => {
+        // Per-panelist budget check OUTSIDE the inner try/catch so a
+        // BudgetExceededError propagates instead of being swallowed.
+        await assertWithinBudget(sessionId, capCents);
         emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
         const { system, user } = votingPrompt({
@@ -223,6 +237,9 @@ export async function runVotingPhase(
 
     // Send amendments back to drafter for revision
     emit({ type: 'intervention_prompt', message: `Draft rejected — revision ${iteration + 1} requested` });
+
+    // Cost guard before the re-drafting call (also expensive).
+    await assertWithinBudget(sessionId, capCents);
 
     const drafter = panelists.find((p) => p.id === drafterId)!;
     const amendmentText = allAmendments.join('\n\n');

@@ -1,10 +1,10 @@
 import { getSession, listRounds, listPanelists, listContributionsForRounds, getApprovedResolution } from '@/lib/db/queries';
 import { sessionBus } from '@/lib/deliberation/event-bus';
-import { runDeliberation } from '@/lib/deliberation/engine';
+import { runDeliberation, EngineLockBusyError } from '@/lib/deliberation/engine';
 import type { SSEEvent, DbSession, SessionStatus, Phase, VoteVerdict } from '@/lib/db/types';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function GET(
   request: Request,
@@ -25,7 +25,6 @@ export async function GET(
       }
 
       try {
-        // Check session state
         const session = await getSession(sessionId);
 
         if (!session) {
@@ -36,16 +35,15 @@ export async function GET(
 
         const dbSession = session as DbSession;
 
-        // If session is already completed, send historical events
+        // Terminal states: replay history and close.
         if (dbSession.status === 'completed' || dbSession.status === 'abandoned') {
           await sendHistoricalEvents(sessionId, send);
           controller.close();
           return;
         }
 
-        // Check if engine is already running
+        // Reattach to a live in-process engine (same Node process / dev server).
         if (sessionBus.isRunning(sessionId)) {
-          // Subscribe to existing stream
           const replay = sessionBus.getReplayBuffer(sessionId);
           for (const event of replay) {
             send(event);
@@ -65,33 +63,43 @@ export async function GET(
           return;
         }
 
-        // Only the launch state is allowed to start the engine. Active phases
-        // can reconnect to an existing bus, but must never start a fresh engine
-        // from analysis again.
-        if (dbSession.status !== 'briefing') {
+        // Engine paused — preserve work, surface "click Resume" message.
+        if (dbSession.engine_status === 'paused') {
           await sendHistoricalEvents(sessionId, send);
           send({
             type: 'intervention_prompt',
-            message: `Session is already in '${dbSession.status}' and no live engine is attached. Not starting a duplicate run.`,
+            message: dbSession.engine_error
+              ? `Engine paused: ${dbSession.engine_error}. Click Resume to continue.`
+              : 'Engine paused. Click Resume to continue.',
           });
           controller.close();
           return;
         }
 
-        // Start the engine inline — this keeps the SSE connection alive
+        // Try to acquire the DB-level lock and start the engine. The lock is
+        // the only thing that prevents two function instances from racing
+        // each other to start the same engine.
         sessionBus.create(sessionId);
-        sessionBus.setRunning(sessionId, true);
 
-        // Also subscribe to the bus so we capture events for the stream
         const unsubscribe = sessionBus.subscribe(sessionId, send);
 
         try {
+          sessionBus.setRunning(sessionId, true);
           await runDeliberation(sessionId, (event) => {
             sessionBus.emit(sessionId, event);
           });
         } catch (error) {
-          const msg = error instanceof Error ? error.message : 'Engine error';
-          sessionBus.emit(sessionId, { type: 'error', message: msg, fatal: true });
+          if (error instanceof EngineLockBusyError) {
+            // Another instance owns the lock right now — replay history and close.
+            await sendHistoricalEvents(sessionId, send);
+            send({
+              type: 'intervention_prompt',
+              message: 'Engine is already running for this session in another process.',
+            });
+          } else {
+            const msg = error instanceof Error ? error.message : 'Engine error';
+            sessionBus.emit(sessionId, { type: 'error', message: msg, fatal: true });
+          }
         } finally {
           unsubscribe();
           sessionBus.setRunning(sessionId, false);
@@ -119,7 +127,6 @@ export async function GET(
 }
 
 async function sendHistoricalEvents(sessionId: string, send: (event: SSEEvent) => void) {
-  // Load all rounds, panelists, contributions, and approved resolution
   const [rounds, panelists, approvedResolution] = await Promise.all([
     listRounds(sessionId),
     listPanelists(sessionId),
@@ -129,7 +136,6 @@ async function sendHistoricalEvents(sessionId: string, send: (event: SSEEvent) =
   const roundIds = rounds.map((r) => r.id);
   const contributions = await listContributionsForRounds(roundIds);
 
-  // Group contributions by round_id
   const contribsByRound = new Map<string, typeof contributions>();
   for (const c of contributions) {
     const arr = contribsByRound.get(c.round_id) || [];

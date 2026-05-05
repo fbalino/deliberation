@@ -1,41 +1,44 @@
-import type { CallModelParams, StreamChunk, ModelResponse } from './types';
+import type { CallModelParams, StreamChunk, ModelResponse, Provider } from './types';
 import { getModelById } from './models';
 import { openaiStream, openaiComplete } from './providers/openai';
 import { anthropicStream, anthropicComplete } from './providers/anthropic';
 import { googleStream, googleComplete } from './providers/google';
+import { withProviderSlot, withProviderSlotStream } from './limiter';
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_MS = 1000;
 
-function getProvider(modelId: string) {
+function getProvider(modelId: string): Provider {
   const model = getModelById(modelId);
   if (!model) throw new Error(`Unknown model: ${modelId}`);
   return model.provider;
 }
 
+function callProviderStream(provider: Provider, params: CallModelParams): AsyncGenerator<StreamChunk> {
+  switch (provider) {
+    case 'openai':    return openaiStream(params);
+    case 'anthropic': return anthropicStream(params);
+    case 'google':    return googleStream(params);
+    default: throw new Error(`Unsupported provider: ${provider}`);
+  }
+}
+
+function callProviderComplete(provider: Provider, params: CallModelParams): Promise<ModelResponse> {
+  switch (provider) {
+    case 'openai':    return openaiComplete(params);
+    case 'anthropic': return anthropicComplete(params);
+    case 'google':    return googleComplete(params);
+    default: throw new Error(`Unsupported provider: ${provider}`);
+  }
+}
+
 async function* withRetryStream(params: CallModelParams): AsyncGenerator<StreamChunk> {
+  const provider = getProvider(params.modelId);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const provider = getProvider(params.modelId);
-      let stream: AsyncGenerator<StreamChunk>;
-
-      switch (provider) {
-        case 'openai':
-          stream = openaiStream(params);
-          break;
-        case 'anthropic':
-          stream = anthropicStream(params);
-          break;
-        case 'google':
-          stream = googleStream(params);
-          break;
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
-
-      for await (const chunk of stream) {
+      for await (const chunk of callProviderStream(provider, params)) {
         yield chunk;
       }
       return;
@@ -52,22 +55,12 @@ async function* withRetryStream(params: CallModelParams): AsyncGenerator<StreamC
 }
 
 async function withRetryComplete(params: CallModelParams): Promise<ModelResponse> {
+  const provider = getProvider(params.modelId);
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      const provider = getProvider(params.modelId);
-
-      switch (provider) {
-        case 'openai':
-          return await openaiComplete(params);
-        case 'anthropic':
-          return await anthropicComplete(params);
-        case 'google':
-          return await googleComplete(params);
-        default:
-          throw new Error(`Unsupported provider: ${provider}`);
-      }
+      return await callProviderComplete(provider, params);
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       if (attempt < MAX_RETRIES - 1) {
@@ -81,9 +74,11 @@ async function withRetryComplete(params: CallModelParams): Promise<ModelResponse
 }
 
 export async function* callModelStream(params: CallModelParams): AsyncGenerator<StreamChunk> {
-  yield* withRetryStream(params);
+  const provider = getProvider(params.modelId);
+  yield* withProviderSlotStream(provider, () => withRetryStream(params));
 }
 
 export async function callModelComplete(params: CallModelParams): Promise<ModelResponse> {
-  return withRetryComplete(params);
+  const provider = getProvider(params.modelId);
+  return withProviderSlot(provider, () => withRetryComplete(params));
 }

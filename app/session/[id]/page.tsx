@@ -10,7 +10,7 @@ import { VoteSummary } from '@/components/session/VoteSummary';
 import { PhaseTransition } from '@/components/session/PhaseTransition';
 import { ResolutionPanel } from '@/components/session/ResolutionPanel';
 import { DraftView } from '@/components/session/DraftView';
-import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist, DbResolution } from '@/lib/db/types';
+import type { SessionStatus, Phase, SSEEvent, VoteVerdict, SessionDetail, DbPanelist, DbResolution, EngineStatus } from '@/lib/db/types';
 
 interface SessionState {
   phase: SessionStatus;
@@ -25,6 +25,8 @@ interface SessionState {
   resolutionId: string | null;
   resolution: DbResolution | null;
   userRole: 'observer' | 'participant';
+  engineStatus: EngineStatus;
+  engineError: string | null;
 }
 
 type Action = SSEEvent | { type: 'init'; session: SessionDetail };
@@ -71,7 +73,19 @@ function reducer(state: SessionState, action: Action): SessionState {
 
     const approvedRes = session.resolutions?.find((r) => r.status === 'approved') || session.resolutions?.[0] || null;
     const sessionConfig = session.config as { user_role?: string } | undefined;
-    return { ...state, phase: session.status, rounds, votes, totalCostCents: session.total_cost_cents, resolutionId: approvedRes?.id || null, resolution: approvedRes as DbResolution | null, currentRound: maxRound, userRole: (sessionConfig?.user_role as 'observer' | 'participant') || 'observer' };
+    return {
+      ...state,
+      phase: session.status,
+      rounds,
+      votes,
+      totalCostCents: session.total_cost_cents,
+      resolutionId: approvedRes?.id || null,
+      resolution: approvedRes as DbResolution | null,
+      currentRound: maxRound,
+      userRole: (sessionConfig?.user_role as 'observer' | 'participant') || 'observer',
+      engineStatus: session.engine_status ?? 'idle',
+      engineError: session.engine_error ?? null,
+    };
   }
 
   switch (action.type) {
@@ -176,6 +190,8 @@ const INITIAL_STATE: SessionState = {
   resolutionId: null,
   resolution: null,
   userRole: 'observer',
+  engineStatus: 'idle',
+  engineError: null,
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -358,6 +374,31 @@ export default function SessionPage({ params }: { params: Promise<{ id: string }
                   style={{ color: 'var(--accent)' }}
                 >
                   Redraft
+                </button>
+              )}
+              {state.engineStatus === 'paused' && (
+                <span
+                  className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded"
+                  style={{ background: 'var(--warning-subtle)', color: 'var(--warning-text)' }}
+                  title={state.engineError || 'Engine paused after a transient error'}
+                >
+                  Paused
+                </span>
+              )}
+              {state.engineStatus === 'paused' && isActive && (
+                <button
+                  onClick={async () => {
+                    const res = await fetch(`/api/sessions/${sessionId}/resume`, { method: 'POST' });
+                    if (res.ok) {
+                      window.location.reload();
+                    } else {
+                      alert('Resume failed: ' + (await res.text()));
+                    }
+                  }}
+                  className="text-xs font-medium transition-colors"
+                  style={{ color: 'var(--accent)' }}
+                >
+                  Resume
                 </button>
               )}
               {isActive && (

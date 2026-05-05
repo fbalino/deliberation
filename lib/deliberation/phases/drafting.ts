@@ -1,7 +1,10 @@
-import { listRounds, listContributionsForRounds, insertRound, insertContribution, insertResolution } from '@/lib/db/queries';
+import {
+  listRounds, listContributionsForRounds, insertRound,
+  insertContribution, insertResolution, getLatestDraftResolution,
+} from '@/lib/db/queries';
 import type { DbPanelist, DbSession, SessionConfig, SSEEvent, TokenUsage } from '@/lib/db/types';
 import { callModelStream } from '@/lib/openrouter/client';
-import { logCost } from '@/lib/costs/tracker';
+import { assertWithinBudget, logCost } from '@/lib/costs/tracker';
 import { draftingPrompt } from '@/lib/deliberation/prompts';
 
 export async function runDraftingPhase(
@@ -9,11 +12,35 @@ export async function runDraftingPhase(
   drafterId: string,
   panelists: DbPanelist[],
   session: DbSession,
-  _config: SessionConfig,
+  config: SessionConfig,
   emit: (event: SSEEvent) => void
 ): Promise<string> {
   const drafter = panelists.find((p) => p.id === drafterId);
   if (!drafter) throw new Error('Drafter not found');
+
+  // ---- Resume support ----
+  // If a draft resolution already exists for this session, the drafting
+  // phase has been done — return the existing draft instead of paying again.
+  const existingDraft = await getLatestDraftResolution(sessionId);
+  if (existingDraft) {
+    emit({ type: 'round_start', round: existingDraft.version, phase: 'drafting' });
+    emit({ type: 'contribution_start', panelistId: drafter.id, panelistName: drafter.display_name });
+    emit({
+      type: 'contribution_chunk',
+      panelistId: drafter.id,
+      text: existingDraft.content_markdown,
+      isThinking: false,
+    });
+    emit({
+      type: 'contribution_end',
+      panelistId: drafter.id,
+      tokenUsage: { input_tokens: 0, output_tokens: 0, thinking_tokens: 0, cached_tokens: 0, cost_cents: 0 },
+    });
+    return existingDraft.id;
+  }
+
+  // Hard cost guard before the (typically expensive) drafting call.
+  await assertWithinBudget(sessionId, config.cost_cap_cents);
 
   // Load full transcript
   const rounds = await listRounds(sessionId, ['analysis', 'discussion']);

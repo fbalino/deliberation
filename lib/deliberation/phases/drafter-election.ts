@@ -1,7 +1,7 @@
 import { listRounds, listContributionsForRound, insertRound, insertContribution } from '@/lib/db/queries';
 import type { DbPanelist, DbSession, SessionConfig, SSEEvent } from '@/lib/db/types';
 import { callModelComplete } from '@/lib/openrouter/client';
-import { logCost } from '@/lib/costs/tracker';
+import { assertWithinBudget, logCost } from '@/lib/costs/tracker';
 import { drafterElectionPrompt } from '@/lib/deliberation/prompts';
 
 export async function runDrafterElection(
@@ -17,6 +17,40 @@ export async function runDrafterElection(
     if (drafter) {
       emit({ type: 'drafter_elected', panelistId: drafter.id, panelistName: drafter.display_name });
       return drafter.id;
+    }
+  }
+
+  const aiPanelists = panelists.filter((p) => !p.is_human);
+  const panelistNames = aiPanelists.map((p) => p.display_name);
+  const capCents = config.cost_cap_cents;
+
+  // ---- Resume support ----
+  // If a prior drafter_election round exists with all panelists having
+  // recorded a drafter_vote, replay it and return the existing winner.
+  const existingElectionRounds = await listRounds(sessionId, ['drafter_election']);
+  if (existingElectionRounds.length > 0) {
+    const latest = existingElectionRounds[existingElectionRounds.length - 1];
+    const existingContribs = await listContributionsForRound(latest.id);
+    const completed = new Set(existingContribs.map((c) => c.panelist_id));
+    const allVoted = aiPanelists.every((p) => completed.has(p.id));
+    if (allVoted) {
+      const tally = new Map<string, number>();
+      for (const c of existingContribs) {
+        if (c.drafter_vote) tally.set(c.drafter_vote, (tally.get(c.drafter_vote) || 0) + 1);
+      }
+      let winnerId = aiPanelists[0].id;
+      let max = 0;
+      for (const [id, count] of tally) {
+        if (count > max) { max = count; winnerId = id; }
+      }
+      const winner = aiPanelists.find((p) => p.id === winnerId);
+      emit({ type: 'round_start', round: latest.round_number, phase: 'drafter_election' });
+      emit({
+        type: 'drafter_elected',
+        panelistId: winnerId,
+        panelistName: winner?.display_name || 'Unknown',
+      });
+      return winnerId;
     }
   }
 
@@ -38,14 +72,18 @@ export async function runDrafterElection(
 
   emit({ type: 'round_start', round: 1, phase: 'drafter_election' });
 
-  const aiPanelists = panelists.filter((p) => !p.is_human);
-  const panelistNames = aiPanelists.map((p) => p.display_name);
+  // Hard cost guard at the phase boundary, then again per panelist below
+  // (outside the per-panelist try/catch so it propagates to the engine).
+  await assertWithinBudget(sessionId, capCents);
 
   // Collect votes
   const votes = new Map<string, number>();
 
   await Promise.all(
     aiPanelists.map(async (panelist) => {
+      // Budget check OUTSIDE the inner try so BudgetExceededError propagates
+      // up to the engine instead of being silently swallowed as "[Vote unavailable]".
+      await assertWithinBudget(sessionId, capCents);
       emit({ type: 'contribution_start', panelistId: panelist.id, panelistName: panelist.display_name });
 
       try {

@@ -1,6 +1,6 @@
-import type { TokenUsage } from '@/lib/db/types';
 import type { CallModelParams, StreamChunk, ModelResponse } from '../types';
 import { getModelById } from '../models';
+import { createTimeoutController, rethrowAbort } from '../fetch-helper';
 
 const GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
@@ -44,119 +44,140 @@ function estimateCost(inputTokens: number, outputTokens: number, modelId: string
   return Math.round(cost * 100);
 }
 
-export async function* googleStream(params: CallModelParams): AsyncGenerator<StreamChunk> {
-  const body = buildBody(params);
-  const url = `${GEMINI_BASE}/${params.modelId}:streamGenerateContent?alt=sse&key=${getApiKey()}`;
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-
+async function doFetch(url: string, body: Record<string, unknown>, signal: AbortSignal): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (err) {
+    rethrowAbort(err, signal);
+  }
   if (!res.ok) {
     throw new Error(`Gemini ${res.status}: ${await res.text()}`);
   }
+  return res;
+}
 
-  if (!res.body) throw new Error('No response body');
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  let inputTokens = 0;
-  let outputTokens = 0;
+export async function* googleStream(params: CallModelParams): AsyncGenerator<StreamChunk> {
+  const body = buildBody(params);
+  const url = `${GEMINI_BASE}/${params.modelId}:streamGenerateContent?alt=sse&key=${getApiKey()}`;
+  const tc = createTimeoutController();
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    const res = await doFetch(url, body, tc.signal);
+    tc.onConnected();
+    if (!res.body) throw new Error('No response body');
 
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let inputTokens = 0;
+    let outputTokens = 0;
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith('data: ')) continue;
-        const payload = trimmed.slice(6);
-
+    try {
+      while (true) {
+        let chunkResult: ReadableStreamReadResult<Uint8Array>;
         try {
-          const data = JSON.parse(payload);
+          chunkResult = await reader.read();
+        } catch (err) {
+          rethrowAbort(err, tc.signal);
+        }
+        const { done, value } = chunkResult;
+        if (done) break;
+        tc.onChunk();
 
-          // Usage metadata
-          if (data.usageMetadata) {
-            inputTokens = data.usageMetadata.promptTokenCount || 0;
-            outputTokens = data.usageMetadata.candidatesTokenCount || 0;
-          }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
-          const parts = data.candidates?.[0]?.content?.parts;
-          if (parts) {
-            for (const part of parts) {
-              if (part.thought) {
-                // Gemini thinking content
-                yield { type: 'reasoning', text: part.text || '' };
-              } else if (part.text) {
-                yield { type: 'content', text: part.text };
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed.startsWith('data: ')) continue;
+          const payload = trimmed.slice(6);
+
+          try {
+            const data = JSON.parse(payload);
+
+            // Usage metadata
+            if (data.usageMetadata) {
+              inputTokens = data.usageMetadata.promptTokenCount || 0;
+              outputTokens = data.usageMetadata.candidatesTokenCount || 0;
+            }
+
+            const parts = data.candidates?.[0]?.content?.parts;
+            if (parts) {
+              for (const part of parts) {
+                if (part.thought) {
+                  yield { type: 'reasoning', text: part.text || '' };
+                } else if (part.text) {
+                  yield { type: 'content', text: part.text };
+                }
               }
             }
+          } catch {
+            // skip malformed chunk
           }
-        } catch { /* skip malformed */ }
+        }
       }
+    } finally {
+      reader.releaseLock();
     }
-  } finally {
-    reader.releaseLock();
-  }
 
-  yield {
-    type: 'done',
-    usage: {
-      input_tokens: inputTokens,
-      output_tokens: outputTokens,
-      thinking_tokens: 0,
-      cached_tokens: 0,
-      cost_cents: estimateCost(inputTokens, outputTokens, params.modelId),
-    },
-  };
+    yield {
+      type: 'done',
+      usage: {
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        thinking_tokens: 0,
+        cached_tokens: 0,
+        cost_cents: estimateCost(inputTokens, outputTokens, params.modelId),
+      },
+    };
+  } finally {
+    tc.cleanup();
+  }
 }
 
 export async function googleComplete(params: CallModelParams): Promise<ModelResponse> {
   const body = buildBody(params);
   const url = `${GEMINI_BASE}/${params.modelId}:generateContent?key=${getApiKey()}`;
+  const tc = createTimeoutController();
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  try {
+    const res = await doFetch(url, body, tc.signal);
+    tc.onConnected();
+    const data = await res.json();
 
-  if (!res.ok) {
-    throw new Error(`Gemini ${res.status}: ${await res.text()}`);
-  }
+    let content = '';
+    let reasoning: string | null = null;
 
-  const data = await res.json();
-  let content = '';
-  let reasoning: string | null = null;
-
-  const parts = data.candidates?.[0]?.content?.parts || [];
-  for (const part of parts) {
-    if (part.thought) {
-      reasoning = (reasoning || '') + (part.text || '');
-    } else if (part.text) {
-      content += part.text;
+    const parts = data.candidates?.[0]?.content?.parts || [];
+    for (const part of parts) {
+      if (part.thought) {
+        reasoning = (reasoning || '') + (part.text || '');
+      } else if (part.text) {
+        content += part.text;
+      }
     }
+
+    const u = data.usageMetadata || {};
+
+    return {
+      content,
+      reasoning,
+      usage: {
+        input_tokens: u.promptTokenCount || 0,
+        output_tokens: u.candidatesTokenCount || 0,
+        thinking_tokens: u.thoughtsTokenCount || 0,
+        cached_tokens: u.cachedContentTokenCount || 0,
+        cost_cents: estimateCost(u.promptTokenCount || 0, u.candidatesTokenCount || 0, params.modelId),
+      },
+    };
+  } finally {
+    tc.cleanup();
   }
-
-  const u = data.usageMetadata || {};
-
-  return {
-    content,
-    reasoning,
-    usage: {
-      input_tokens: u.promptTokenCount || 0,
-      output_tokens: u.candidatesTokenCount || 0,
-      thinking_tokens: u.thoughtsTokenCount || 0,
-      cached_tokens: u.cachedContentTokenCount || 0,
-      cost_cents: estimateCost(u.promptTokenCount || 0, u.candidatesTokenCount || 0, params.modelId),
-    },
-  };
 }
