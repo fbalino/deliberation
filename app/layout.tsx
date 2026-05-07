@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { Playfair_Display, Plus_Jakarta_Sans } from 'next/font/google';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { LogoutButton } from '@/components/ui/LogoutButton';
 import './globals.css';
 
 const serif = Playfair_Display({
@@ -49,6 +50,7 @@ function Sidebar() {
       <div className="px-3 pb-6">
         <div className="h-px mb-3" style={{ background: 'var(--sidebar-border)' }} />
         <ThemeToggle />
+        <LogoutButton />
       </div>
     </aside>
   );
